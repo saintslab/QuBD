@@ -70,7 +70,7 @@ def get_tiled_manifold(weight_tensor, num_planes, robust=False, percentile=99.9)
     return tiled
 
 
-def measure_complexity(input_obj, bit_depths=[8], max_workers=8, robust=False, percentile=99.9, tiled=False):
+def measure_complexity(input_obj, bit_depths=[8], max_workers=8, robust=True, percentile=99.9, tiled=False):
     """Aggregates complexity scores for independent and optionally tiled manifolds."""
     binary_tasks = []
     multi_tasks = {bd: [] for bd in bit_depths}
