@@ -2,6 +2,7 @@ import torch
 import numpy as np
 from pybdm import BDM
 from concurrent.futures import ProcessPoolExecutor
+import torch.nn as nn
 
 # Global BDM instance for workers
 bdm_instance = BDM(ndim=2, nsymbols=2)
@@ -69,22 +70,29 @@ def get_tiled_manifold(weight_tensor, num_planes, robust=False, percentile=99.9)
     return tiled
 
 
-def measure_complexity(model, bit_depths=[8], max_workers=8, robust=False, percentile=99.9, tiled=False):
+def measure_complexity(input_obj, bit_depths=[8], max_workers=8, robust=False, percentile=99.9, tiled=False):
     """Aggregates complexity scores for independent and optionally tiled manifolds."""
     binary_tasks = []
     multi_tasks = {bd: [] for bd in bit_depths}
     tiled_tasks = {bd: [] for bd in bit_depths} if tiled else {}
 
-    for name, p in model.named_parameters():
-        if p.requires_grad and p.dim() >= 2:
-            binary_tasks.append((p.data > 0).cpu().numpy().astype(np.int8))
-            for bd in bit_depths:
-                if tiled:
-                    tm = get_tiled_manifold(p.data, bd, robust=robust, percentile=percentile)
-                    if tm is not None: tiled_tasks[bd].append(tm)
+    # Identify tensors to process: either from a model or a direct tensor input
+    if isinstance(input_obj, nn.Module):
+        tensors = [p.data for name, p in input_obj.named_parameters() if p.requires_grad and p.dim() >= 2]
+    elif isinstance(input_obj, torch.Tensor):
+        tensors = [input_obj] if input_obj.dim() >= 2 else []
+    else:
+        raise ValueError("Input must be a torch.nn.Module or a multi-dimensional torch.Tensor")
 
-                planes = get_bitplanes(p.data, bd, robust=robust, percentile=percentile)
-                multi_tasks[bd].extend(planes)
+    for p_data in tensors:
+        binary_tasks.append((p_data.data > 0).cpu().numpy().astype(np.int8))
+        for bd in bit_depths:
+            if tiled:
+                tm = get_tiled_manifold(p_data.data, bd, robust=robust, percentile=percentile)
+                if tm is not None: tiled_tasks[bd].append(tm)
+
+            planes = get_bitplanes(p_data.data, bd, robust=robust, percentile=percentile)
+            multi_tasks[bd].extend(planes)
 
     def chunk_list(lst, n):
         for i in range(0, len(lst), n):

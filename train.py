@@ -15,6 +15,8 @@ from qbdm.qbdm import measure_complexity
 # Environmental configuration for offline local cache priority
 CACHE_DIR = os.path.expanduser("~/.cache/timm_models")
 os.makedirs(CACHE_DIR, exist_ok=True)
+RES_DIR = './results'
+os.makedirs(RES_DIR, exist_ok=True)
 os.environ['TORCH_HOME'] = CACHE_DIR
 os.environ['HF_HOME'] = CACHE_DIR
 os.environ['TRANSFORMERS_OFFLINE'] = '1'
@@ -137,7 +139,7 @@ def main():
         percentile=ROBUST_PERCENTILE
     )
     
-    save_name = f"{active_model_name.replace('.', '_')}_budget_study"
+    save_name = RES_DIR+f"/{active_model_name.replace('.', '_')}_budget_study"
     if USE_ROBUST_NORM:
         save_name += f"_robust_{str(ROBUST_PERCENTILE).replace('.', 'p')}"
 
