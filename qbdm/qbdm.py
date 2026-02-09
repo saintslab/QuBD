@@ -7,6 +7,25 @@ import torch.nn as nn
 # Global BDM instance for workers
 bdm_instance = BDM(ndim=2, nsymbols=2)
 
+def quantizer(weight_tensor, robust=False, percentile=99.9):
+    """Simple quantizer; can be swapped with others"""
+    h, w = weight_tensor.shape
+    if robust:
+        # Compute quantiles to clamp extreme outliers
+        flat_w = weight_tensor.view(-1).float()
+        q = (1.0 - percentile / 100.0) / 2.0
+        w_min = torch.quantile(flat_w, q)
+        w_max = torch.quantile(flat_w, 1.0 - q)
+        weight_tensor = torch.clamp(weight_tensor, w_min, w_max)
+    else:
+        w_min, w_max = weight_tensor.min(), weight_tensor.max()
+
+    if w_max == w_min:
+        return [np.zeros((h, w), dtype=np.int8)] * num_planes
+
+    quantized = ((weight_tensor - w_min) / (w_max - w_min + 1e-8) * (2**num_planes - 1)).to(torch.uint8)
+    return quantized
+
 def bdm_batch_worker(data_list):
     """Processes a batch of binary planes in a single worker call to reduce overhead."""
     results = []
@@ -25,21 +44,9 @@ def get_bitplanes(weight_tensor, num_planes, robust=False, percentile=99.9):
     if h < 4 or w < 4:
         return []
 
-    if robust:
-        # Compute quantiles to clamp extreme outliers
-        flat_w = weight_tensor.view(-1).float()
-        q = (1.0 - percentile / 100.0) / 2.0
-        w_min = torch.quantile(flat_w, q)
-        w_max = torch.quantile(flat_w, 1.0 - q)
-        weight_tensor = torch.clamp(weight_tensor, w_min, w_max)
-    else:
-        w_min, w_max = weight_tensor.min(), weight_tensor.max()
-
-    if w_max == w_min:
-        return [np.zeros((h, w), dtype=np.int8)] * num_planes
-
-    scaled = ((weight_tensor - w_min) / (w_max - w_min + 1e-8) * (2**num_planes - 1)).to(torch.uint8)
+    scaled = quantizer(weight_tensor)
     planes = []
+
     for i in range(num_planes):
         plane_np = ((scaled >> i) & 1).cpu().numpy().astype(np.int8)
         planes.append(plane_np)
