@@ -206,7 +206,7 @@ def measure_complexity(model, bit_depths=[8], max_workers=8, robust=False, perce
             m_tasks = multi_tasks[bd]
             m_chunks = list(chunk_list(m_tasks, max(1, len(m_tasks) // (max_workers * 2))))
             m_results = list(executor.map(bdm_batch_worker, m_chunks))
-            total_multi[bd] = sum(sum(res) for res in m_results)
+            total_multi[bd] = m_results#sum(sum(res) for res in m_results)
 
             if tiled:
                 t_tasks = tiled_tasks[bd]
