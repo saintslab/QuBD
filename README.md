@@ -46,5 +46,5 @@ Utility module providing quantizer classes (`UniformQuantizer`, `UniformQuantize
 ```
 ### Who do I talk to? ###
 
-* raghav@di.ku.dk
+* pba@di.ku.dk; raghav@di.ku.dk
 
