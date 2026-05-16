@@ -6,7 +6,7 @@ from timm.data import resolve_data_config, create_transform
 from tqdm import tqdm
 import copy
 
-from ptq_utils import UniformQuantizer, UniformQuantizer_per_channel, attach_weight_quantizers, toggle_quantization
+from utils.ptq_utils import UniformQuantizer, UniformQuantizer_per_channel, attach_weight_quantizers, toggle_quantization
 
 BIT = [1, 2, 3, 4, 5, 6, 7, 8]
 EXCLUDE = []
