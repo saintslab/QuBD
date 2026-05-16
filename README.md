@@ -1,10 +1,7 @@
-# q-Bit Quantized BDM
+# QuBD Complexity 
 
-Try it out by
-```
-python test.py
-```
-# q-Bit Quantized BDM
+Official repository for Bakhtiarifard et al. "Characterizing Learning in Deep Neural Networks using Tractable Algorithmic Complexity Analysis" (2026). 
+
 
 ## Scripts
 
@@ -34,3 +31,20 @@ python ptq.py
 
 ### ptq_utils.py
 Utility module providing quantizer classes (`UniformQuantizer`, `UniformQuantizer_per_channel`) and helper functions (`attach_weight_quantizers`, `detach_weight_quantizers`, `toggle_quantization`) used by `ptq.py`. Not intended to be run directly.
+
+### Usage guidelines ###
+
+* Kindly cite our publication if you use any part of the code
+
+```
+@inproceedings{bakh2026qubd,
+        title={{Characterizing Learning in Deep Neural Networks using Tractable Algorithmic Complexity Analysis}},
+        author={Pedram Bakhtiarifard, Sophia N. Wilson, Mahmoud Afifi, Jonathan Wenshøj and Raghavendra Selvan},
+        booktitle={Arxiv},
+        note={arXiv preprint},
+        year={2026}}
+```
+### Who do I talk to? ###
+
+* raghav@di.ku.dk
+
