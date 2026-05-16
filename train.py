@@ -34,8 +34,8 @@ MLP_SCALES = [0.5,1.0]
 BATCH_SIZE = 128
 TRAIN_EPOCHS = 101 
 BIT_DEPTHS = [2,4,8] 
-DATA_BUDGETS = [100, 200]#, 500, 2000, 5000, 10000, 20000, 40000]
-VAL_SIZE = 100
+DATA_BUDGETS = [100, 200, 500, 2000, 5000, 10000, 20000, 40000]
+VAL_SIZE = 10000
 REPEATS = 3
 LOG_INTERVAL = 5
 
@@ -236,7 +236,7 @@ if __name__ == "__main__":
     tracker.epoch_start()
     for scale in MLP_SCALES:
         ### Run all experiments 
-        #main(scale)
+        main(scale)
         ### Make paper plots
         make_main_figure(RESULTS_DIR)
     tracker.epoch_end()
