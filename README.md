@@ -6,6 +6,14 @@ Official repository for [Bakhtiarifard et al. (2026)](https://arxiv.org/abs/2605
 
 ## Scripts
 
+### Main Results
+Results in Figure 4 in the paper can be reproduced by running this script:
+
+```
+python train.py
+```
+
+
 ### complexity_per_layer.py
 Computes bitplane complexity per layer for 5 pretrained models (ResNet18, ResNet50, ViT-B/16, EfficientNet-B0, MobileNetV3), comparing pretrained vs. random weights. Results are saved to `results/complexity_per_layer_5models.json`.
 
