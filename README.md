@@ -1,7 +1,8 @@
 # QuBD Complexity 
 
-Official repository for Bakhtiarifard et al. "Characterizing Learning in Deep Neural Networks using Tractable Algorithmic Complexity Analysis" (2026). 
+Official repository for [Bakhtiarifard et al. (2026)](https://arxiv.org/abs/2605.15551) "Characterizing Learning in Deep Neural Networks using Tractable Algorithmic Complexity Analysis". 
 
+![qubd](utils/qubd.png)
 
 ## Scripts
 
@@ -41,7 +42,7 @@ Utility module providing quantizer classes (`UniformQuantizer`, `UniformQuantize
         title={{Characterizing Learning in Deep Neural Networks using Tractable Algorithmic Complexity Analysis}},
         author={Pedram Bakhtiarifard, Sophia N. Wilson, Mahmoud Afifi, Jonathan Wenshøj and Raghavendra Selvan},
         booktitle={Arxiv},
-        note={arXiv preprint},
+        note={arXiv preprint arxiv:2605.15551},
         year={2026}}
 ```
 ### Who do I talk to? ###
