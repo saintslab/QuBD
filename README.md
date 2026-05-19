@@ -1,6 +1,6 @@
 # QuBD Complexity 
 
-Official repository for "Characterizing Learning in Deep Neural Networks using Tractable Algorithmic Complexity Analysis". 
+Official repository for the paper: _"Characterizing Learning in Deep Neural Networks using Tractable Algorithmic Complexity Analysis"_. 
 
 ![qubd](utils/qubd.png)
 
