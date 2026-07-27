@@ -238,3 +238,54 @@ def make_main_figure(RESULTS_DIR='./results/'):
     print("Done!")
 
 
+def make_pythia_dynamics_figure(results_path, out_dir='./results/'):
+    """Plots training loss (from wandb) alongside weight complexity reduction (from qbdm)
+    across a sweep of Pythia training-step checkpoints."""
+    with open(results_path, 'r') as f:
+        data = json.load(f)
+
+    meta, hist = data['metadata'], data['history']
+    steps = np.array(hist['steps'])
+    max_bd = str(max(meta['bit_depths']))
+
+    valid = [(s, l) for s, l in zip(steps, hist['train_loss']) if l is not None]
+    loss_steps, loss_vals = zip(*valid)
+
+    fig, ax1 = plt.subplots(figsize=(10, 6))
+    ax1.set_xscale('symlog', linthresh=1)
+
+    color_loss = 'tab:red'
+    ax1.plot(loss_steps, loss_vals, marker='o', color=color_loss, label='Train loss (wandb)')
+    ax1.set_xlabel('Training step')
+    ax1.set_ylabel('Train Loss', color=color_loss)
+    ax1.tick_params(axis='y', labelcolor=color_loss)
+
+    val_loss = meta.get('val_loss')
+    if val_loss and val_loss.get('steps'):
+        ax1.scatter(val_loss['steps'], val_loss['loss'], marker='*', s=220, color='black',
+                    edgecolors='white', zorder=6, label='Validation loss (wandb, sparse)')
+
+    ax2 = ax1.twinx()
+    color_bdm, color_lzma, color_msb = 'tab:blue', 'tab:green', 'tab:purple'
+    ax2.plot(steps, hist['sav_bin'], marker='s', color=color_bdm, label='BDM complexity reduction (%)')
+    ax2.plot(steps, hist['sav_lzma'][max_bd], marker='^', color=color_lzma,
+              label=f'LZMA {max_bd}-bit plane savings (%)')
+    if 'sav_msb' in hist:
+        ax2.plot(steps, hist['sav_msb'][max_bd], marker='d', color=color_msb,
+                  label=f'BDM MSB-plane (bit {int(max_bd) - 1}) reduction (%)')
+    ax2.set_ylabel('Complexity Reduction (%)')
+
+    lines1, labels1 = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines1 + lines2, labels1 + labels2, loc='center right')
+
+    model_name = meta['model'].split('/')[-1]
+    ax1.set_title(f'{model_name}: Training Loss vs. Weight Complexity (reduction vs. step0)')
+    fig.tight_layout()
+
+    save_path = os.path.join(out_dir, f'{model_name}_dynamics.pdf')
+    fig.savefig(save_path, bbox_inches='tight')
+    print(f"Saved figure to {save_path}")
+    return save_path
+
+
