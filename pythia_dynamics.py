@@ -16,9 +16,7 @@ os.makedirs(RESULTS_DIR, exist_ok=True)
 os.environ['HF_HOME'] = CACHE_DIR
 
 ### Global Experiment Parameters
-MODEL_NAMES = ["EleutherAI/pythia-1b"]
-
-#["EleutherAI/pythia-70m", "EleutherAI/pythia-1b"]
+MODEL_NAMES = ["EleutherAI/pythia-160m", "EleutherAI/pythia-410m"]#, "EleutherAI/pythia-1b"]
 BIT_DEPTHS = [8]
 TOKENS_PER_STEP = 2_097_152  # every Pythia model used a fixed 2M-token batch
 
@@ -103,12 +101,20 @@ def fetch_train_loss_history(run_name, entity=WANDB_ENTITY, project=WANDB_PROJEC
 # can't discover this automatically since no single run spans the full 0-143000 range, so we hand
 # -curate the merge instead: earlier segments are the fp16 base, later ones are the bf16 fixes and
 # take priority wherever they overlap.
+#
+# pythia-410m has a similar gap for an unrelated reason: its longest single run ('v2-410m_1dz9o23i')
+# only logged steps 35001-142999 (a pre-emption/resume likely dropped the earlier history from that
+# run's own log), so we splice in an earlier run from the same group family to cover steps 1-37466.
 WANDB_LOSS_SEGMENTS = {
     "EleutherAI/pythia-1b": [
         {"run": "1n8lyorh", "group": "v2-1b_1ifzt6l1"},       # fp16 base, steps 0-127728 (ends in NaN)
         {"run": "339s0ka6", "group": "v2-1b-bf16_dhizomr8"},  # bf16 restart, steps ~9158-104290
         {"run": "1ena81fo", "group": "v2-1b-bf16_14geqde9"},  # bf16 continuation, ~107145-119890
         {"run": "318z89xb", "group": "v2-1b-bf16_h2e543aw"},  # bf16 continuation, ~126145-138546
+    ],
+    "EleutherAI/pythia-410m": [
+        {"run": "3jg1upg7", "group": "v2-410m_5gef88i8"},  # earlier run, steps 1-37466
+        {"run": "12j05401", "group": "v2-410m_1dz9o23i"},  # longest run, steps 35001-142999
     ],
 }
 
@@ -127,7 +133,7 @@ def get_loss_history_and_wandb_meta(model_name):
     if model_name in WANDB_LOSS_SEGMENTS:
         segments = WANDB_LOSS_SEGMENTS[model_name]
         print(f"Using {len(segments)} hand-curated wandb run segment(s) for {model_name} "
-              "(training switched fp16->bf16 partway through)")
+              "(no single run spans the full step range; see WANDB_LOSS_SEGMENTS comment)")
         loss_by_step = fetch_train_loss_history_merged(segments)
         val_loss_by_step = fetch_train_loss_history_merged(segments, key=WANDB_VAL_LOSS_KEY)
         wandb_meta = {"entity": WANDB_ENTITY, "project": WANDB_PROJECT, "segments": segments}
