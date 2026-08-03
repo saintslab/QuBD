@@ -211,7 +211,7 @@ def make_main_figure(RESULTS_DIR='./results/'):
         #label = label.split('width')[0]+f'({size:.1f}M)' 
         label = f'{size:.1f}M'
 
-        max_bd = model['depths'][-2]
+        max_bd = model['depths'][-1]
         m_mean, m_std = stats['multi'][max_bd]['mean'], stats['multi'][max_bd]['std']
         ax_p_multi.scatter(m_mean, stats['acc_mean'], s=sizes, color=color, edgecolors='white', alpha=0.5, zorder=5)
         ax_p_multi.errorbar(m_mean, stats['acc_mean'], xerr=m_std, yerr=stats['acc_std'], fmt='s', color=color, label=label, lw=4, capsize=5,alpha=0.5)
