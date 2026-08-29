@@ -5,7 +5,7 @@ import time
 import requests
 from transformers import AutoModelForCausalLM
 
-from qbdm.qbdm import measure_complexity, measure_bitplane_compression
+from qbdm.qbdm import measure_complexity, measure_bitplane_compression, multi_plane_ratio
 
 # Environmental configuration for offline local cache priority
 CACHE_DIR = os.path.expanduser("~/.cache/timm_models")
@@ -258,8 +258,7 @@ def main(model_name):
         h["sav_bin"].append((c_bin / b_bin) * 100 if b_bin else 0.0)
         h["c_bin_raw"].append(c_bin)
         for bd in BIT_DEPTHS:
-            b_sum = sum(b_multi[bd])
-            h["sav_multi"][str(bd)].append((sum(c_multi[bd]) / b_sum) * 100 if b_sum else 0.0)
+            h["sav_multi"][str(bd)].append(multi_plane_ratio(c_multi[bd], b_multi[bd]))
             # c_multi[bd] is ordered LSB (index 0) -> MSB (index bd-1); see qbdm/qbdm.py measure_complexity
             b_msb, c_msb = b_multi[bd][-1], c_multi[bd][-1]
             h["sav_msb"][str(bd)].append((c_msb / b_msb) * 100 if b_msb else 0.0)
