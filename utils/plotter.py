@@ -21,23 +21,28 @@ plt.rcParams.update({
 
 model_sizes = {'0.5':0.567434,'1.0':1.462538, '2.0':4.235786, '0.25': 0.242762, '4.0': 13.714442}
 
-def load_and_process_results(filepath):
+def load_and_process_results(filepath, baseline='rand'):
     """
-    Loads JSON data and computes statistical aggregates for accuracy 
+    Loads JSON data and computes statistical aggregates for accuracy
     and multi-resolution complexity savings across budgets.
+
+    baseline: 'rand' (paper's Eq. 14 random-init baseline, sav_*_rand keys -- the headline
+    metric these figures report) or 'self' (self-shuffle "true structure" baseline,
+    sav_*_self keys -- see train.py/qbdm.py docstrings for the distinction).
     """
     with open(filepath, 'r') as f:
         data = json.load(f)
-    
+
     budgets = sorted([int(k) for k in data['results'].keys()])
     str_budgets = [str(b) for b in budgets]
-    
+
     bit_depths = data['metadata'].get('bit_depths', [])
     if not bit_depths and 'bit_depth' in data['metadata']:
         bit_depths = [data['metadata']['bit_depth']]
-    
+
     str_bit_depths = [str(bd) for bd in bit_depths]
-    
+
+    suffix = f'_{baseline}'
     stats = {
         'budgets': budgets,
         'acc_mean': [], 'acc_std': [],
@@ -46,27 +51,28 @@ def load_and_process_results(filepath):
         'lzma_mean':[], 'lzma_std':[],
         'multi': {bd: {'mean': [], 'std': []} for bd in str_bit_depths}
     }
-    
+
     for b in str_budgets:
         res = data['results'][b]
         stats['acc_mean'].append(np.mean(res['acc']))
         stats['acc_std'].append(np.std(res['acc']))
-        stats['bin_mean'].append(np.mean(res['sav_bin']))
-        stats['bin_std'].append(np.std(res['sav_bin']))
-        stats['lzma_mean'].append(np.mean(res['sav_lzma']))
-        stats['lzma_std'].append(np.std(res['sav_lzma']))
-        stats['gzip_mean'].append(np.mean(res['sav_gzip']))
-        stats['gzip_std'].append(np.std(res['sav_gzip']))
-      
+        stats['bin_mean'].append(np.mean(res['sav_bin' + suffix]))
+        stats['bin_std'].append(np.std(res['sav_bin' + suffix]))
+        stats['lzma_mean'].append(np.mean(res['sav_lzma' + suffix]))
+        stats['lzma_std'].append(np.std(res['sav_lzma' + suffix]))
+        stats['gzip_mean'].append(np.mean(res['sav_gzip' + suffix]))
+        stats['gzip_std'].append(np.std(res['sav_gzip' + suffix]))
+
+        sav_multi = res['sav_multi' + suffix]
         for bd in str_bit_depths:
-            if isinstance(res['sav_multi'], dict):
-                depth_vals = res['sav_multi'].get(bd, [])
+            if isinstance(sav_multi, dict):
+                depth_vals = sav_multi.get(bd, [])
             else:
-                depth_vals = res['sav_multi']
-                
+                depth_vals = sav_multi
+
             stats['multi'][bd]['mean'].append(np.mean(depth_vals))
             stats['multi'][bd]['std'].append(np.std(depth_vals))
-        
+
     return stats, data['metadata'], str_bit_depths
 
 def make_main_figure(RESULTS_DIR='./results/'):

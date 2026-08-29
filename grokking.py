@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.optim as optim
 import matplotlib.pyplot as plt
 import numpy as np
-from qbdm.qbdm import measure_complexity, shuffled_weights, multi_plane_ratio
+from qbdm.qbdm import measure_complexity, shuffled_weights, multi_plane_ratio, per_plane_ratio
 import json
 
 RESULTS_DIR = os.path.expanduser("./results/")
@@ -29,7 +29,7 @@ NUM_REPEATS = 3
 # Training Hyperparameters
 USE_ROBUST_NORM = True
 ROBUST_PERCENTILE = 99.9
-BIT_WIDTH = 4
+BIT_WIDTH = 8
 P = 97
 D_MODEL = 512
 LR = 1e-3
@@ -54,7 +54,8 @@ class GrokkingModel(nn.Module):
 all_runs = {
     't_acc': [], 'v_acc': [],
     't_loss': [], 'v_loss': [],
-    'qbdm': []
+    'qbdm_rand': [], 'qbdm_self': [],
+    'qbdm_per_plane_rand': [], 'qbdm_per_plane_self': []
 }
 steps = None
 
@@ -67,13 +68,22 @@ for run in range(NUM_REPEATS):
     optimizer = optim.AdamW(model.parameters(), lr=LR, weight_decay=WD)
     criterion = nn.CrossEntropyLoss()
 
+    # Random-init baseline (paper's Eq. 14 f_RND): this run's freshly-initialized model,
+    # measured once before any training step and reused as the fixed denominator for every
+    # eval this run (each run draws its own fresh init, so unlike train.py this can't be
+    # hoisted out of the run loop).
+    _, b_dict, _ = measure_complexity(model, bit_depths=[BIT_WIDTH],
+                                       robust=USE_ROBUST_NORM, percentile=ROBUST_PERCENTILE)
+
     x_data = torch.cartesian_prod(torch.arange(P), torch.arange(P)).to(device)
     y_data = ((x_data[:, 0] + x_data[:, 1]) % P).to(device)
     indices = torch.randperm(P * P)
     split_idx = int(TRAIN_FRACTION * P * P)
     train_idx, val_idx = indices[:split_idx], indices[split_idx:]
 
-    run_history = {'t_acc': [], 'v_acc': [], 't_loss': [], 'v_loss': [], 'qbdm': []}
+    run_history = {'t_acc': [], 'v_acc': [], 't_loss': [], 'v_loss': [],
+                    'qbdm_rand': [], 'qbdm_self': [],
+                    'qbdm_per_plane_rand': [], 'qbdm_per_plane_self': []}
     current_steps = []
 
     for epoch in range(NUM_EPOCHS + 1):
@@ -95,25 +105,32 @@ for run in range(NUM_REPEATS):
                 v_acc = (v_logits.argmax(1) == y_data[val_idx]).float().mean().item()
                 _, c_dict, _ = measure_complexity(model, bit_depths=[BIT_WIDTH],
                                               robust=USE_ROBUST_NORM, percentile=ROBUST_PERCENTILE)
-                # "True structure" baseline: shuffle this same snapshot's own weights (same
-                # value distribution, no spatial pattern) rather than track a raw, unnormalized
-                # sum -- isolates genuine structure from whatever the value distribution alone
-                # would give, same rationale as train.py. Matches the paper's own grokking
-                # figure (Fig. 5, right), which plots Delta C_QuBD (%), not a raw BDM sum.
+                # Self-shuffle baseline: this same snapshot's own weights, randomly permuted
+                # (same value distribution, no spatial pattern). Reported alongside the
+                # random-init baseline (b_dict, measured once above) rather than replacing it
+                # -- see train.py/qbdm.py multi_plane_ratio() docstrings for the distinction.
                 with shuffled_weights(model):
                     _, s_dict, _ = measure_complexity(model, bit_depths=[BIT_WIDTH],
                                                   robust=USE_ROBUST_NORM, percentile=ROBUST_PERCENTILE)
-                qbdm_score = multi_plane_ratio(c_dict[BIT_WIDTH], s_dict[BIT_WIDTH])
+                qbdm_rand = multi_plane_ratio(c_dict[BIT_WIDTH], b_dict[BIT_WIDTH])
+                qbdm_self = multi_plane_ratio(c_dict[BIT_WIDTH], s_dict[BIT_WIDTH])
 
                 current_steps.append(epoch)
                 run_history['t_acc'].append(t_acc)
                 run_history['v_acc'].append(v_acc)
                 run_history['t_loss'].append(t_loss.item())
                 run_history['v_loss'].append(v_loss.item())
-                run_history['qbdm'].append(qbdm_score)
+                run_history['qbdm_rand'].append(qbdm_rand)
+                run_history['qbdm_self'].append(qbdm_self)
+                # Per-plane (LSB idx 0 -> MSB idx BIT_WIDTH-1) against each baseline -- where
+                # reduction concentrates; the aggregates above dilute that once several planes
+                # are near-random (paper Fig. 7 discussion).
+                run_history['qbdm_per_plane_rand'].append(per_plane_ratio(c_dict[BIT_WIDTH], b_dict[BIT_WIDTH]))
+                run_history['qbdm_per_plane_self'].append(per_plane_ratio(c_dict[BIT_WIDTH], s_dict[BIT_WIDTH]))
 
-                if epoch % 5000 == 0:
-                    print(f"Epoch {epoch:5} | Val Acc: {v_acc:.2f} | QBDM: {qbdm_score:.2f}% of shuffled-self")
+                if epoch % 1000 == 0:
+                    print(f"Epoch {epoch:5} | Val Acc: {v_acc:.2f} | "
+                          f"QBDM: {qbdm_rand:.2f}% of rand / {qbdm_self:.2f}% of self")
 
     # Store run results
     for key in all_runs:
@@ -169,9 +186,11 @@ ax2.set_xlabel('Epochs (log)')
 ax2.set_xscale('log') # This sets the logarithmic scale
 ax2.grid(True, alpha=0.2)
 
-# Secondary Axis for QBDM
+# Secondary Axis for QBDM -- both baselines (see multi_plane_ratio()/shuffled_weights()
+# docstrings for the distinction).
 ax3 = ax2.twinx()
-plot_with_std(ax3, steps, stats['qbdm_mean'], stats['qbdm_std'], r'$\Delta C_{QuBD}$', 'tab:green')
+plot_with_std(ax3, steps, stats['qbdm_rand_mean'], stats['qbdm_rand_std'], r'$\Delta C_{QuBD}$ (vs. rand)', 'tab:green')
+plot_with_std(ax3, steps, stats['qbdm_self_mean'], stats['qbdm_self_std'], r'$\Delta C_{QuBD}$ (vs. self)', 'tab:olive', '--')
 ax3.set_ylabel(r'$\Delta C_{QuBD}$ (%)')
 
 # Merge legends for the bottom subplot
