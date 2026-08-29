@@ -115,8 +115,8 @@ def make_main_figure(RESULTS_DIR='./results/'):
     # --- FIGURE 4: ACCURACY-COMPLEXITY PARETO ---
     fig_p_bin, ax_p_bin = plt.subplots(figsize=(8,6))
     for i, model in enumerate(all_data):
-        sizes = get_sizes(stats['budgets'])
         label, stats, color = model['label'], model['stats'], cmap(i % 10)
+        sizes = get_sizes(stats['budgets'])
         size = model_sizes[label.split('width')[1].split(' ')[1]]
         label = f'{size:.1f}M'
 
@@ -143,8 +143,8 @@ def make_main_figure(RESULTS_DIR='./results/'):
     # --- FIGURE 5: ACCURACY-COMPRESSION PARETO ---
     fig_p_bin, ax_p_bin = plt.subplots(figsize=(8,6))
     for i, model in enumerate(all_data):
-        sizes = get_sizes(stats['budgets'])
         label, stats, color = model['label'], model['stats'], cmap(i % 10)
+        sizes = get_sizes(stats['budgets'])
         size = model_sizes[label.split('width')[1].split(' ')[1]]
         #label = label.split('width')[0]+f'({size:.1f}M)'
         label = f'{size:.1f}M'
@@ -174,8 +174,8 @@ def make_main_figure(RESULTS_DIR='./results/'):
     # --- FIGURE 5: ACCURACY-COMPRESSION PARETO ---
     fig_p_bin, ax_p_bin = plt.subplots(figsize=(8,6))
     for i, model in enumerate(all_data):
-        sizes = get_sizes(stats['budgets'])
         label, stats, color = model['label'], model['stats'], cmap(i % 10)
+        sizes = get_sizes(stats['budgets'])
         size = model_sizes[label.split('width')[1].split(' ')[1]]
         #label = label.split('width')[0]+f'({size:.1f}M)'
         label = f'{size:.1f}M'
@@ -207,8 +207,9 @@ def make_main_figure(RESULTS_DIR='./results/'):
     fig_p_multi, ax_p_multi = plt.subplots(figsize=(8,6))
     for i, model in enumerate(all_data):
         label, stats, color = model['label'], model['stats'], cmap(i % 10)
+        sizes = get_sizes(stats['budgets'])
         size = model_sizes[label.split('width')[1].split(' ')[1]]
-        #label = label.split('width')[0]+f'({size:.1f}M)' 
+        #label = label.split('width')[0]+f'({size:.1f}M)'
         label = f'{size:.1f}M'
 
         max_bd = model['depths'][-1]

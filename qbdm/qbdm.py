@@ -56,6 +56,7 @@ def shuffled_weights(model):
             for w, original in originals:
                 w.data.view(-1).copy_(original)
 
+
 def bdm_batch_worker(data_list):
     """Processes a batch of binary planes in a single worker call to reduce overhead."""
     results = []
@@ -279,7 +280,7 @@ def measure_complexity(model, bit_depths=[8], max_workers=8, robust=False, perce
             m_tasks = multi_tasks[bd]
             m_chunks = list(chunk_list(m_tasks, max(1, len(m_tasks) // (max_workers * 2))))
             m_results = list(executor.map(bdm_batch_worker, m_chunks))
-            
+
             flat = [score for chunk in m_results for score in chunk]
             total_multi[bd] = [sum(flat[i::bd]) for i in range(bd)] # re-group by plane
 
