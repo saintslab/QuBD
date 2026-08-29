@@ -124,7 +124,7 @@ def make_main_figure(RESULTS_DIR='./results/'):
         ax_p_bin.errorbar(stats['bin_mean'], stats['acc_mean'], xerr=stats['bin_std'], yerr=stats['acc_std'], fmt='s', color=color, label=label, lw=4, capsize=5,alpha=0.5)
         ax_p_bin.errorbar(stats['bin_mean'], stats['acc_mean'], xerr=stats['bin_std'], yerr=stats['acc_std'], fmt='-', color=color, lw=1, capsize=5)
 
-    ax_p_bin.set_xlabel('BDM Complexity Reduction (%)'); ax_p_bin.set_ylabel('Accuracy (%)')
+    ax_p_bin.set_xlabel('BDM Complexity (% of baseline)'); ax_p_bin.set_ylabel('Accuracy (%)')
     ax_p_bin.set_xlim([-5,105])
     ax_p_bin.legend()
     # Model Legend
@@ -154,7 +154,7 @@ def make_main_figure(RESULTS_DIR='./results/'):
         ax_p_bin.errorbar(stats['lzma_mean'], stats['acc_mean'], xerr=stats['lzma_std'], yerr=stats['acc_std'], fmt='-', color=color, lw=1)
 
     #ax_p_bin.set_title('Accuracy-Compression Pareto: LZMA', fontsize=22)
-    ax_p_bin.set_xlabel('LZMA Complexity Reduction (%)'); ax_p_bin.set_ylabel('Accuracy (%)')
+    ax_p_bin.set_xlabel('LZMA Complexity (% of baseline)'); ax_p_bin.set_ylabel('Accuracy (%)')
     #ax_p_bin.grid(True, alpha=0.3); 
     ax_p_bin.set_xlim([-5,105])
     ax_p_bin.legend()
@@ -185,7 +185,7 @@ def make_main_figure(RESULTS_DIR='./results/'):
         ax_p_bin.errorbar(stats['gzip_mean'], stats['acc_mean'], xerr=stats['gzip_std'], yerr=stats['acc_std'], fmt='-', color=color, lw=1, alpha=0.5)
 
     #ax_p_bin.set_title('Accuracy-Compression Pareto: LZMA', fontsize=22)
-    ax_p_bin.set_xlabel('GZIP Complexity Reduction (%)'); ax_p_bin.set_ylabel('Accuracy (%)')
+    ax_p_bin.set_xlabel('GZIP Complexity (% of baseline)'); ax_p_bin.set_ylabel('Accuracy (%)')
     #ax_p_bin.grid(True, alpha=0.3); 
     ax_p_bin.legend()
     ax_p_bin.set_xlim([-5,105])
@@ -218,7 +218,7 @@ def make_main_figure(RESULTS_DIR='./results/'):
         ax_p_multi.errorbar(m_mean, stats['acc_mean'], xerr=m_std, yerr=stats['acc_std'], fmt='-', color=color, lw=1)
  
     #ax_p_multi.set_title('Accuracy-Complexity Pareto: Multi-bit BDM', fontsize=22)
-    ax_p_multi.set_xlabel('QuBD Complexity Reduction (%)'); ax_p_multi.set_ylabel('Accuracy (%)')
+    ax_p_multi.set_xlabel('QuBD Complexity (% of baseline)'); ax_p_multi.set_ylabel('Accuracy (%)')
     #ax_p_multi.grid(True, alpha=0.3); 
     ax_p_multi.set_xlim([-5,105])
     ax_p_multi.legend()
@@ -239,8 +239,8 @@ def make_main_figure(RESULTS_DIR='./results/'):
 
 
 def make_pythia_dynamics_figure(results_path, out_dir='./results/'):
-    """Plots training loss (from wandb) alongside weight complexity reduction (from qbdm)
-    across a sweep of Pythia training-step checkpoints."""
+    """Plots training loss (from wandb) alongside weight complexity (from qbdm, as % of the
+    untrained baseline) across a sweep of Pythia training-step checkpoints."""
     with open(results_path, 'r') as f:
         data = json.load(f)
 
@@ -267,20 +267,20 @@ def make_pythia_dynamics_figure(results_path, out_dir='./results/'):
 
     ax2 = ax1.twinx()
     color_bdm, color_lzma, color_msb = 'tab:blue', 'tab:green', 'tab:purple'
-    ax2.plot(steps, hist['sav_bin'], marker='s', color=color_bdm, label='BDM complexity reduction (%)')
+    ax2.plot(steps, hist['sav_bin'], marker='s', color=color_bdm, label='BDM complexity (% of baseline)')
     ax2.plot(steps, hist['sav_lzma'][max_bd], marker='^', color=color_lzma,
               label=f'LZMA {max_bd}-bit plane savings (%)')
     if 'sav_msb' in hist:
         ax2.plot(steps, hist['sav_msb'][max_bd], marker='d', color=color_msb,
-                  label=f'BDM MSB-plane (bit {int(max_bd) - 1}) reduction (%)')
-    ax2.set_ylabel('Complexity Reduction (%)')
+                  label=f'BDM MSB-plane (bit {int(max_bd) - 1}) (% of baseline)')
+    ax2.set_ylabel('Complexity (% of baseline)')
 
     lines1, labels1 = ax1.get_legend_handles_labels()
     lines2, labels2 = ax2.get_legend_handles_labels()
     ax1.legend(lines1 + lines2, labels1 + labels2, loc='center right')
 
     model_name = meta['model'].split('/')[-1]
-    ax1.set_title(f'{model_name}: Training Loss vs. Weight Complexity (reduction vs. step0)')
+    ax1.set_title(f'{model_name}: Training Loss vs. Weight Complexity (% of step-0 baseline)')
     fig.tight_layout()
 
     save_path = os.path.join(out_dir, f'{model_name}_dynamics.pdf')

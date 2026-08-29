@@ -255,22 +255,22 @@ def main(model_name):
         h["steps"].append(step)
         h["tokens"].append(step * TOKENS_PER_STEP)
         h["train_loss"].append(nearest_loss(loss_by_step, step))
-        h["sav_bin"].append((1 - c_bin / b_bin) * 100 if b_bin else 0.0)
+        h["sav_bin"].append((c_bin / b_bin) * 100 if b_bin else 0.0)
         h["c_bin_raw"].append(c_bin)
         for bd in BIT_DEPTHS:
             b_sum = sum(b_multi[bd])
-            h["sav_multi"][str(bd)].append((1 - sum(c_multi[bd]) / b_sum) * 100 if b_sum else 0.0)
+            h["sav_multi"][str(bd)].append((sum(c_multi[bd]) / b_sum) * 100 if b_sum else 0.0)
             # c_multi[bd] is ordered LSB (index 0) -> MSB (index bd-1); see qbdm/qbdm.py measure_complexity
             b_msb, c_msb = b_multi[bd][-1], c_multi[bd][-1]
-            h["sav_msb"][str(bd)].append((1 - c_msb / b_msb) * 100 if b_msb else 0.0)
+            h["sav_msb"][str(bd)].append((c_msb / b_msb) * 100 if b_msb else 0.0)
             h["multi_per_plane"][str(bd)].append(list(c_multi[bd]))
             h["sav_lzma"][str(bd)].append(c_bit_comp[bd]["lzma"])
             h["sav_gzip"][str(bd)].append(c_bit_comp[bd]["gzip"])
 
         loss_val = h["train_loss"][-1]
         loss_str = f"{loss_val:.3f}" if loss_val is not None else "n/a"
-        print(f"step {step:>7}: loss={loss_str}, BDM sav={h['sav_bin'][-1]:6.2f}%, "
-              f"MSB(bit{BIT_DEPTHS[-1]-1}) sav={h['sav_msb'][str(BIT_DEPTHS[-1])][-1]:6.2f}%, "
+        print(f"step {step:>7}: loss={loss_str}, BDM={h['sav_bin'][-1]:6.2f}% of baseline, "
+              f"MSB(bit{BIT_DEPTHS[-1]-1})={h['sav_msb'][str(BIT_DEPTHS[-1])][-1]:6.2f}% of baseline, "
               f"LZMA sav={h['sav_lzma'][str(BIT_DEPTHS[-1])][-1]:6.2f}% ({time.time() - t0:.1f}s)")
 
         with open(results_path, "w") as f:

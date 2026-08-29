@@ -30,13 +30,13 @@ os.environ['TRANSFORMERS_OFFLINE'] = '1'
 ### Global Experiment Parameters
 USE_FASHION_MLP = True
 VIT_MODEL_NAME = 'vit_tiny_patch16_224.augreg_in21k_ft_in1k'
-MLP_SCALES = [0.5,1.0]
+MLP_SCALES = [0.5]#,1.0]
 BATCH_SIZE = 128
 TRAIN_EPOCHS = 101 
 BIT_DEPTHS = [8] 
-DATA_BUDGETS = [100, 200, 500, 2000, 5000, 10000, 20000, 40000]
+DATA_BUDGETS = [100, 200, 500, 2000, 5000]#, 10000, 20000, 40000]
 VAL_SIZE = 10000
-REPEATS = 3
+REPEATS = 1
 LOG_INTERVAL = 5
 
 # Quantization-Aware Training Settings
@@ -203,20 +203,22 @@ def main(MLP_SCALE=1.0):
                 track_history=is_last_budget, baseline_k=baseline_k, qat=QAT, fname=save_name+'_data_'+repr(budget)+'_repeat_'+repr(r)
             )
             
-            agg_bin[budget].append((1 - c_bin/b_bin)*100)
+            agg_bin[budget].append((c_bin/b_bin)*100)
             agg_acc[budget].append(acc)
-            agg_gzip[budget].append((1-c_comp['gzip']/b_comp['gzip'])*100)
-            agg_lzma[budget].append((1-c_comp['lzma']/b_comp['lzma'])*100)
+            agg_gzip[budget].append((c_comp['gzip']/b_comp['gzip'])*100)
+            agg_lzma[budget].append((c_comp['lzma']/b_comp['lzma'])*100)
             for bd in BIT_DEPTHS:
                 #pdb.set_trace()
-                agg_multi[budget][bd].append((1 - (sum(c_multi[bd])/sum(b_multi_dict[bd]))*100))
+                agg_multi[budget][bd].append((sum(c_multi[bd])/sum(b_multi_dict[bd]))*100)
                 agg_bit_gzip[budget][bd].append(c_bit_comp[bd]['gzip'])
                 agg_bit_lzma[budget][bd].append(c_bit_comp[bd]['lzma'])
             
             if is_last_budget:
                 final_budget_histories.append(hist)
             
-            print(f"Repeat {r+1}: Acc={acc:.2f}%, Bin Sav={agg_bin[budget][-1]:.2f}%, LZMA(8b) Plane Sav={c_bit_comp[BIT_DEPTHS[-1]]['lzma']:.2f}%")
+            print(f"Repeat {r+1}: Acc={acc:.2f}%, BDM={agg_bin[budget][-1]:.2f}% of baseline, "
+                  f"QuBD({BIT_DEPTHS[-1]}b)={agg_multi[budget][BIT_DEPTHS[-1]][-1]:.2f}% of baseline, "
+                  f"LZMA(8b) Plane Sav={c_bit_comp[BIT_DEPTHS[-1]]['lzma']:.2f}%")
 
         export_data["results"][str(budget)] = {
             "acc": agg_acc[budget], "sav_bin": agg_bin[budget],
