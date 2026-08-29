@@ -2,6 +2,7 @@ import torch
 import numpy as np
 from pybdm import BDM
 from concurrent.futures import ProcessPoolExecutor
+from contextlib import contextmanager
 import gzip
 import lzma
 import pdb
@@ -9,6 +10,51 @@ import torch.nn as nn
 
 # Global BDM instance for workers
 bdm_instance = BDM(ndim=2, nsymbols=2)
+
+def _eligible_weight_params(model):
+    """Yields the same trainable, 2D+ weight tensors that measure_complexity() collects
+    (see its tensor-selection logic below), handling parametrized (e.g. QAT) modules by
+    yielding the underlying raw parameter rather than the computed/quantized view."""
+    for module in model.modules():
+        if not hasattr(module, 'weight'):
+            continue
+        if hasattr(module, "parametrizations") and "weight" in module.parametrizations:
+            w = module.parametrizations.weight.original
+        else:
+            w = module.weight
+        if isinstance(w, torch.nn.Parameter) and w.requires_grad and w.dim() >= 2:
+            yield w
+
+@contextmanager
+def shuffled_weights(model):
+    """Randomly permutes each eligible weight tensor's values in place for the duration of
+    the `with` block, then restores the originals.
+
+    This preserves each tensor's exact value distribution (so the quantizer's dynamic range,
+    and zeroth-order compressibility, are unchanged) while destroying any learned spatial/
+    structural pattern. Comparing a trained model's complexity/compression against its own
+    shuffled self isolates genuine learned structure from whatever is attributable to the
+    value distribution alone -- a "true structure" baseline, as opposed to comparing against
+    a separately-initialized random model.
+
+    Usage:
+        with shuffled_weights(model):
+            s_bin, s_multi, _ = measure_complexity(model, ...)
+            s_comp = measure_compression(model)
+    """
+    originals = []
+    with torch.no_grad():
+        for w in _eligible_weight_params(model):
+            flat = w.data.view(-1)
+            originals.append((w, flat.clone()))
+            perm = torch.randperm(flat.numel(), device=flat.device)
+            flat.copy_(flat[perm])
+    try:
+        yield model
+    finally:
+        with torch.no_grad():
+            for w, original in originals:
+                w.data.view(-1).copy_(original)
 
 def bdm_batch_worker(data_list):
     """Processes a batch of binary planes in a single worker call to reduce overhead."""
@@ -149,6 +195,33 @@ def measure_per_plane_complexity(model, bit_depth=8, max_workers=8, robust=False
         total_multi = sum(sum(res) for res in m_results)
 
     return total_multi, np.array(m_results).flatten()
+
+
+def multi_plane_ratio(c_multi, s_multi):
+    """Total QuBD-style complexity ratio across all planes, as a percentage: matches the
+    paper's Eq. 14 definition (Delta C_QuBD = C_QuBD(f_PT) / C_QuBD(f_RND)), where
+    C_QuBD(w) = sum of per-plane complexity (Eq. 2/Fig. 2's "Aggregate" step) -- i.e. a
+    plain ratio(sum(c_multi), sum(s_multi)), not a per-plane average or weighting.
+
+    c_multi/s_multi are per-plane score lists from measure_complexity()'s total_multi[bd].
+    Note this aggregate dilutes as bit_depth grows and more planes are near-random (see the
+    paper's Fig. 7 discussion): to see *where* the reduction is concentrated (MSB vs LSB),
+    use the per-plane ratios directly (c_multi[i]/s_multi[i]) rather than this aggregate --
+    that's what Fig. 1/6/7 plot, and what this function intentionally does not compute.
+    """
+    total_s = sum(s_multi)
+    if not total_s:
+        return 0.0
+    return 100.0 * sum(c_multi) / total_s
+
+
+def per_plane_ratio(c_multi, s_multi):
+    """Per-plane complexity ratio c_multi[i]/s_multi[i], as percentages (list ordered LSB
+    index 0 -> MSB index bd-1). This is the quantity to plot against plane index to show
+    where structural reduction is concentrated (paper Fig. 1/6/7), since the aggregate
+    multi_plane_ratio() dilutes that signal once several planes are near-random.
+    """
+    return [100.0 * c / s if s else 0.0 for c, s in zip(c_multi, s_multi)]
 
 
 def measure_complexity(model, bit_depths=[8], max_workers=8, robust=False, percentile=99.9, tiled=False):

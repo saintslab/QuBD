@@ -12,7 +12,7 @@ import json
 import numpy as np
 from utils.models import SimpleMLP
 from utils.plotter import make_main_figure
-from qbdm.qbdm import measure_complexity, measure_compression, measure_bitplane_compression
+from qbdm.qbdm import measure_complexity, measure_compression, measure_bitplane_compression, shuffled_weights, multi_plane_ratio, per_plane_ratio
 from quantizer.quantizer import UniformSymmetricQuantizer
 from quantizer.utils_quantization import attach_weight_quantizers, toggle_quantization
 from tqdm import tqdm
@@ -30,14 +30,15 @@ os.environ['TRANSFORMERS_OFFLINE'] = '1'
 ### Global Experiment Parameters
 USE_FASHION_MLP = True
 VIT_MODEL_NAME = 'vit_tiny_patch16_224.augreg_in21k_ft_in1k'
-MLP_SCALES = [0.5]#,1.0]
+MLP_SCALES = [0.5]#,1.0,2.0]
 BATCH_SIZE = 128
 TRAIN_EPOCHS = 101 
 BIT_DEPTHS = [8] 
-DATA_BUDGETS = [100, 200, 500, 2000, 5000]#, 10000, 20000, 40000]
+DATA_BUDGETS = [100, 200, 500, 2000, 5000, 10000, 20000, 40000]
 VAL_SIZE = 10000
-REPEATS = 1
+REPEATS = 3
 LOG_INTERVAL = 5
+TRACK_HISTORY = False  # log per-epoch loss/BDM/LZMA history (for the largest DATA_BUDGETS run); set False to skip and speed up training
 
 # Quantization-Aware Training Settings
 QAT = False
@@ -47,7 +48,7 @@ QAT_BIT = 8
 USE_ROBUST_NORM = True   
 ROBUST_PERCENTILE = 99.9 
 
-def train_and_evaluate(model, budget, device, train_dataset, val_loader, bit_depths=[8], epochs=3, track_history=False, baseline_k=None, qat=False, fname=None):
+def train_and_evaluate(model, budget, device, train_dataset, val_loader, bit_depths=[8], epochs=3, track_history=False, qat=False, fname=None):
     """Trains model and performs joint algorithmic, statistical, and per-plane redundancy analysis."""
     indices = torch.randperm(len(train_dataset))[:budget]
     subset = Subset(train_dataset, indices)
@@ -61,10 +62,14 @@ def train_and_evaluate(model, budget, device, train_dataset, val_loader, bit_dep
         
     history = {
         'epochs': [],
-        'train_loss': [], 
-        'val_loss': [], 
+        'train_loss': [],
+        'val_loss': [],
         'sav_bdm': {bd: [] for bd in bit_depths},
-        'sav_lzma': {bd: [] for bd in bit_depths}
+        'sav_lzma': {bd: [] for bd in bit_depths},
+        # Per-plane ratio (LSB index 0 -> MSB index bd-1), one list per logged epoch. This is
+        # the evidence for "where" reduction is concentrated (paper Fig. 1/6/7) -- sav_bdm
+        # alone dilutes that once several planes are near-random (paper Fig. 7 discussion).
+        'multi_per_plane': {bd: [] for bd in bit_depths}
     }
     
     for epoch in tqdm(range(epochs)):
@@ -97,13 +102,18 @@ def train_and_evaluate(model, budget, device, train_dataset, val_loader, bit_dep
             
             c_bin, c_multi, _ = measure_complexity(model, bit_depths=bit_depths, robust=USE_ROBUST_NORM, percentile=ROBUST_PERCENTILE)
             c_bit_comp = measure_bitplane_compression(model, bit_depths=bit_depths)
-            history['epochs'].append(epoch) 
+            # "True structure" baseline: shuffle this same snapshot's own weights (same value
+            # distribution, no spatial pattern) rather than compare against a separate
+            # untrained-init model.
+            with shuffled_weights(model):
+                _, s_multi, _ = measure_complexity(model, bit_depths=bit_depths, robust=USE_ROBUST_NORM, percentile=ROBUST_PERCENTILE)
+            history['epochs'].append(epoch)
             history['train_loss'].append(avg_train_loss)
             history['val_loss'].append(avg_val_loss)
 
             for bd in bit_depths:
-                if baseline_k:
-                    history['sav_bdm'][bd].append((sum(c_multi[bd]) / sum(baseline_k[1][bd])) * 100)
+                history['sav_bdm'][bd].append(multi_plane_ratio(c_multi[bd], s_multi[bd]))
+                history['multi_per_plane'][bd].append(per_plane_ratio(c_multi[bd], s_multi[bd]))
                 history['sav_lzma'][bd].append(100 - c_bit_comp[bd]['lzma'])
             
     model.eval()
@@ -124,8 +134,15 @@ def train_and_evaluate(model, budget, device, train_dataset, val_loader, bit_dep
     )
     c_comp = measure_compression(model)
     c_bit_comp = measure_bitplane_compression(model, bit_depths=bit_depths)
-    
-    return c_bin, c_multi_dict, c_comp, c_bit_comp, accuracy, history
+
+    # "True structure" baseline for the final trained model: same weights, shuffled.
+    with shuffled_weights(model):
+        s_bin, s_multi_dict, _ = measure_complexity(
+            model, bit_depths=bit_depths, robust=USE_ROBUST_NORM, percentile=ROBUST_PERCENTILE
+        )
+        s_comp = measure_compression(model)
+
+    return c_bin, c_multi_dict, c_comp, c_bit_comp, accuracy, history, s_bin, s_multi_dict, s_comp
 
 def main(MLP_SCALE=1.0):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -158,15 +175,11 @@ def main(MLP_SCALE=1.0):
     
     agg_bin, agg_acc = {b: [] for b in DATA_BUDGETS}, {b: [] for b in DATA_BUDGETS}
     agg_multi = {b: {bd: [] for bd in BIT_DEPTHS} for b in DATA_BUDGETS}
+    agg_multi_per_plane = {b: {bd: [] for bd in BIT_DEPTHS} for b in DATA_BUDGETS}
     agg_gzip, agg_lzma = {b: [] for b in DATA_BUDGETS}, {b: [] for b in DATA_BUDGETS}
     agg_bit_gzip = {b: {bd: [] for bd in BIT_DEPTHS} for b in DATA_BUDGETS}
     agg_bit_lzma = {b: {bd: [] for bd in BIT_DEPTHS} for b in DATA_BUDGETS}
     
-    print(f"Measuring Untrained Baseline...")
-    b_bin, b_multi_dict, _ = measure_complexity(initial_model, bit_depths=BIT_DEPTHS, robust=USE_ROBUST_NORM, percentile=ROBUST_PERCENTILE)
-    baseline_k = (b_bin, b_multi_dict)
-    b_comp = measure_compression(initial_model)
-
     save_name = f"{active_model_name.replace('.', '_')}"
     if QAT:
         save_name += f"_QAT{QAT_BIT}"
@@ -179,7 +192,7 @@ def main(MLP_SCALE=1.0):
 
     for budget in DATA_BUDGETS:
         print(f"\n--- Training Study: Budget = {budget} samples ---")
-        is_last_budget = (budget == DATA_BUDGETS[-1])
+        is_last_budget = TRACK_HISTORY and (budget == DATA_BUDGETS[-1])
         
         for r in range(REPEATS):
             model = SimpleMLP(scale=MLP_SCALE).to(device) if USE_FASHION_MLP else timm.create_model(VIT_MODEL_NAME, pretrained=False, num_classes=10, in_chans=3).to(device)
@@ -197,32 +210,39 @@ def main(MLP_SCALE=1.0):
             
             model.load_state_dict(initial_model.state_dict())
             
-            c_bin, c_multi, c_comp, c_bit_comp, acc, hist = train_and_evaluate(
-                model, budget, device, train_dataset, val_loader, 
+            c_bin, c_multi, c_comp, c_bit_comp, acc, hist, s_bin, s_multi_dict, s_comp = train_and_evaluate(
+                model, budget, device, train_dataset, val_loader,
                 bit_depths=BIT_DEPTHS, epochs=TRAIN_EPOCHS,
-                track_history=is_last_budget, baseline_k=baseline_k, qat=QAT, fname=save_name+'_data_'+repr(budget)+'_repeat_'+repr(r)
+                track_history=is_last_budget, qat=QAT, fname=save_name+'_data_'+repr(budget)+'_repeat_'+repr(r)
             )
-            
-            agg_bin[budget].append((c_bin/b_bin)*100)
+
+            # Normalized against this model's own shuffled weights (a "true structure"
+            # baseline), not against a separately-initialized untrained model.
+            agg_bin[budget].append((c_bin/s_bin)*100)
             agg_acc[budget].append(acc)
-            agg_gzip[budget].append((c_comp['gzip']/b_comp['gzip'])*100)
-            agg_lzma[budget].append((c_comp['lzma']/b_comp['lzma'])*100)
+            agg_gzip[budget].append((c_comp['gzip']/s_comp['gzip'])*100)
+            agg_lzma[budget].append((c_comp['lzma']/s_comp['lzma'])*100)
             for bd in BIT_DEPTHS:
                 #pdb.set_trace()
-                agg_multi[budget][bd].append((sum(c_multi[bd])/sum(b_multi_dict[bd]))*100)
+                agg_multi[budget][bd].append(multi_plane_ratio(c_multi[bd], s_multi_dict[bd]))
+                agg_multi_per_plane[budget][bd].append(per_plane_ratio(c_multi[bd], s_multi_dict[bd]))
                 agg_bit_gzip[budget][bd].append(c_bit_comp[bd]['gzip'])
                 agg_bit_lzma[budget][bd].append(c_bit_comp[bd]['lzma'])
             
             if is_last_budget:
                 final_budget_histories.append(hist)
             
-            print(f"Repeat {r+1}: Acc={acc:.2f}%, BDM={agg_bin[budget][-1]:.2f}% of baseline, "
-                  f"QuBD({BIT_DEPTHS[-1]}b)={agg_multi[budget][BIT_DEPTHS[-1]][-1]:.2f}% of baseline, "
+            print(f"Repeat {r+1}: Acc={acc:.2f}%, BDM={agg_bin[budget][-1]:.2f}% of shuffled-self, "
+                  f"QuBD({BIT_DEPTHS[-1]}b)={agg_multi[budget][BIT_DEPTHS[-1]][-1]:.2f}% of shuffled-self, "
                   f"LZMA(8b) Plane Sav={c_bit_comp[BIT_DEPTHS[-1]]['lzma']:.2f}%")
 
         export_data["results"][str(budget)] = {
             "acc": agg_acc[budget], "sav_bin": agg_bin[budget],
             "sav_multi": {bd: agg_multi[budget][bd] for bd in BIT_DEPTHS},
+            # Per-repeat, per-plane ratio (LSB idx 0 -> MSB idx bd-1) of the final trained
+            # model -- the evidence for where reduction concentrates; sav_multi above dilutes
+            # that once several planes are near-random (see multi_plane_ratio docstring).
+            "sav_multi_per_plane": {bd: agg_multi_per_plane[budget][bd] for bd in BIT_DEPTHS},
             "sav_gzip": agg_gzip[budget], "sav_lzma": agg_lzma[budget],
             "sav_bit_gzip": {bd: agg_bit_gzip[budget][bd] for bd in BIT_DEPTHS},
             "sav_bit_lzma": {bd: agg_bit_lzma[budget][bd] for bd in BIT_DEPTHS}
