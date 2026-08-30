@@ -28,20 +28,33 @@ NUM_REPEATS = 1
 
 # Training Hyperparameters
 USE_ROBUST_NORM = True
-ROBUST_PERCENTILE = 99.9
+ROBUST_PERCENTILE = 99.0
 BIT_WIDTH = 8
 # If set (e.g. 8), the quantizer's dynamic range is computed per BLOCK_SIZE x BLOCK_SIZE
 # block of each weight tensor instead of once globally -- localizes the effect of the
 # quantizer's own range on the measured complexity. None = original global-range behavior.
 # See qbdm.qbdm.get_bitplanes()'s docstring for details.
-BLOCK_SIZE = 1024 #None
+BLOCK_SIZE = None
 P = 97
 D_MODEL = 512
 LR = 1e-3
 WD = 1
 TRAIN_FRACTION = 0.5
-NUM_EPOCHS = 11000
+NUM_EPOCHS = 15000
 EVAL_FREQ = 100
+
+# Sparsity tracking: fraction of eligible weight elements whose |w| has fallen below
+# SPARSITY_REL_EPS times that *same tensor's own* initial std (captured once per run,
+# before training). A per-tensor RELATIVE threshold rather than one fixed absolute value,
+# since embed/fc1/fc2 start at very different scales (nn.Embedding's default init has
+# std~1, nn.Linear's default init is ~1/sqrt(fan_in) ~ 0.03-0.04) -- a single absolute
+# epsilon would call one layer "mostly sparse" at init and another "never sparse", which
+# isn't meaningful. This is a cheap diagnostic for the "is qbdm_self's decline just
+# weight-decay-driven pruning of task-irrelevant weights toward ~0" hypothesis: if
+# sparsity climbs in lockstep with qbdm_self's decline, that's consistent with pruning;
+# if qbdm_self moves well beyond what sparsity alone would predict, that points to
+# something more than pruning.
+SPARSITY_REL_EPS = 0.01
 
 class GrokkingModel(nn.Module):
     def __init__(self, p, d):
@@ -54,13 +67,27 @@ class GrokkingModel(nn.Module):
         z = self.embed(x).view(x.shape[0], -1)
         return self.fc2(torch.relu(self.fc1(z)))
 
+
+def sparsity_fraction(model, init_std_by_name, rel_eps=SPARSITY_REL_EPS):
+    """Fraction of eligible weight elements (trainable, dim>=2 -- same selection criteria
+    as qbdm.qbdm._eligible_weight_params) with |w| < rel_eps * that tensor's own initial
+    std, pooled across all eligible tensors."""
+    below, total = 0, 0
+    for name, p in model.named_parameters():
+        if name in init_std_by_name and p.requires_grad and p.dim() >= 2:
+            thresh = rel_eps * init_std_by_name[name]
+            below += (p.data.abs() < thresh).sum().item()
+            total += p.data.numel()
+    return below / total if total > 0 else 0.0
+
 # Data structure to hold all runs
 # We use lists to collect data, then convert to numpy for statistics
 all_runs = {
     't_acc': [], 'v_acc': [],
     't_loss': [], 'v_loss': [],
     'qbdm_rand': [], 'qbdm_self': [],
-    'qbdm_per_plane_rand': [], 'qbdm_per_plane_self': []
+    'qbdm_per_plane_rand': [], 'qbdm_per_plane_self': [],
+    'sparsity': []
 }
 steps = None
 
@@ -81,6 +108,11 @@ for run in range(NUM_REPEATS):
                                        robust=USE_ROBUST_NORM, percentile=ROBUST_PERCENTILE,
                                        block_size=BLOCK_SIZE)
 
+    # Per-tensor initial std, captured once before any training step -- the fixed reference
+    # scale for sparsity_fraction()'s relative threshold (see SPARSITY_REL_EPS comment above).
+    init_std_by_name = {name: p.data.std().item() for name, p in model.named_parameters()
+                         if p.requires_grad and p.dim() >= 2}
+
     x_data = torch.cartesian_prod(torch.arange(P), torch.arange(P)).to(device)
     y_data = ((x_data[:, 0] + x_data[:, 1]) % P).to(device)
     indices = torch.randperm(P * P)
@@ -89,7 +121,8 @@ for run in range(NUM_REPEATS):
 
     run_history = {'t_acc': [], 'v_acc': [], 't_loss': [], 'v_loss': [],
                     'qbdm_rand': [], 'qbdm_self': [],
-                    'qbdm_per_plane_rand': [], 'qbdm_per_plane_self': []}
+                    'qbdm_per_plane_rand': [], 'qbdm_per_plane_self': [],
+                    'sparsity': []}
     current_steps = []
 
     for epoch in range(NUM_EPOCHS + 1):
@@ -122,6 +155,7 @@ for run in range(NUM_REPEATS):
                                                   block_size=BLOCK_SIZE)
                 qbdm_rand = multi_plane_ratio(c_dict[BIT_WIDTH], b_dict[BIT_WIDTH])
                 qbdm_self = multi_plane_ratio(c_dict[BIT_WIDTH], s_dict[BIT_WIDTH])
+                sparsity = sparsity_fraction(model, init_std_by_name)
 
                 current_steps.append(epoch)
                 run_history['t_acc'].append(t_acc)
@@ -130,6 +164,7 @@ for run in range(NUM_REPEATS):
                 run_history['v_loss'].append(v_loss.item())
                 run_history['qbdm_rand'].append(qbdm_rand)
                 run_history['qbdm_self'].append(qbdm_self)
+                run_history['sparsity'].append(sparsity)
                 # Per-plane (LSB idx 0 -> MSB idx BIT_WIDTH-1) against each baseline -- where
                 # reduction concentrates; the aggregates above dilute that once several planes
                 # are near-random (paper Fig. 7 discussion).
@@ -138,7 +173,8 @@ for run in range(NUM_REPEATS):
 
                 if epoch % 1000 == 0:
                     print(f"Epoch {epoch:5} | Val Acc: {v_acc:.2f} | "
-                          f"QBDM: {qbdm_rand:.2f}% of rand / {qbdm_self:.2f}% of self")
+                          f"QBDM: {qbdm_rand:.2f}% of rand / {qbdm_self:.2f}% of self | "
+                          f"Sparsity: {sparsity*100:.2f}%")
 
     # Store run results
     for key in all_runs:
@@ -170,7 +206,7 @@ with open(file_path, 'w') as f:
 print(f"Statistics successfully saved to {file_path}")
 
 # 4. Visualization with Shaded Error Bars
-fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 12), sharex=True)
+fig, (ax1, ax2, ax4) = plt.subplots(3, 1, figsize=(12, 18), sharex=True)
 
 def plot_with_std(ax, x, mean, std, label, color, linestyle='-',linewidth=4):
     ax.plot(x, mean, label=label, color=color, linestyle=linestyle,linewidth=linewidth)
@@ -189,8 +225,6 @@ ax1.set_ylim(-0.05, 1.05)
 plot_with_std(ax2, steps, stats['t_loss_mean'], stats['t_loss_std'], 'Train Loss', '#1f77b4')
 plot_with_std(ax2, steps, stats['v_loss_mean'], stats['v_loss_std'], 'Val Loss', '#d62728', '--')
 ax2.set_ylabel('Loss')
-
-ax2.set_xlabel('Epochs (log)')
 ax2.set_xscale('log') # This sets the logarithmic scale
 ax2.grid(True, alpha=0.2)
 
@@ -201,10 +235,25 @@ plot_with_std(ax3, steps, stats['qbdm_rand_mean'], stats['qbdm_rand_std'], r'$\D
 plot_with_std(ax3, steps, stats['qbdm_self_mean'], stats['qbdm_self_std'], r'$\Delta C_{QuBD}$ (vs. self)', 'tab:olive', '--')
 ax3.set_ylabel(r'$\Delta C_{QuBD}$ (%)')
 
-# Merge legends for the bottom subplot
+# Merge legends for the middle subplot
 lines, labels = ax2.get_legend_handles_labels()
 lines2, labels2 = ax3.get_legend_handles_labels()
 ax2.legend(lines + lines2, labels + labels2, loc='upper right')
+
+# Sparsity Plot -- fraction of eligible weight elements with |w| < SPARSITY_REL_EPS * that
+# tensor's own initial std (see SPARSITY_REL_EPS comment above). Plotted alongside qbdm_self
+# on its own panel (same log-epoch x-axis) so the two trends can be compared by eye: if
+# qbdm_self's decline is just weight-decay-driven pruning of task-irrelevant weights toward
+# ~0, the two curves should track each other; a qbdm_self drop well beyond what sparsity
+# alone would predict points to something more than pruning.
+sparsity_pct_mean = np.array(stats['sparsity_mean']) * 100
+sparsity_pct_std = np.array(stats['sparsity_std']) * 100
+plot_with_std(ax4, steps, sparsity_pct_mean, sparsity_pct_std, 'Sparsity (% of weights)', 'tab:purple')
+ax4.set_ylabel('Sparsity (%)')
+ax4.set_xlabel('Epochs (log)')
+ax4.set_xscale('log')
+ax4.grid(True, alpha=0.2)
+ax4.legend(loc='upper left')
 
 plt.tight_layout()
 plot_path = os.path.join(RESULTS_DIR, 'grokking_averaged.pdf')
