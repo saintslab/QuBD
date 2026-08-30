@@ -30,7 +30,7 @@ os.environ['TRANSFORMERS_OFFLINE'] = '1'
 ### Global Experiment Parameters
 USE_FASHION_MLP = True
 VIT_MODEL_NAME = 'vit_tiny_patch16_224.augreg_in21k_ft_in1k'
-MLP_SCALES = [0.5,1.0,2.0]
+MLP_SCALES = [0.5,1.0,2.0,4.0]
 BATCH_SIZE = 128
 TRAIN_EPOCHS = 101 
 BIT_DEPTHS = [8] 
@@ -47,6 +47,11 @@ QAT_BIT = 8
 # Robust Normalization Parameters
 USE_ROBUST_NORM = True
 ROBUST_PERCENTILE = 99.0
+# If set (e.g. 8), the quantizer's dynamic range is computed per BLOCK_SIZE x BLOCK_SIZE
+# block of each weight tensor instead of once globally -- localizes the effect of the
+# quantizer's own range on the measured complexity. None = original global-range behavior.
+# See qbdm.qbdm.get_bitplanes()'s docstring for details.
+BLOCK_SIZE = None
 
 def train_and_evaluate(model, budget, device, train_dataset, val_loader, baseline_multi, bit_depths=[8], epochs=3, track_history=False, qat=False, fname=None):
     """Trains model and performs joint algorithmic, statistical, and per-plane redundancy analysis.
@@ -113,13 +118,13 @@ def train_and_evaluate(model, budget, device, train_dataset, val_loader, baselin
             if qat:
                 toggle_quantization(model, enabled=True)
             
-            c_bin, c_multi, _ = measure_complexity(model, bit_depths=bit_depths, robust=USE_ROBUST_NORM, percentile=ROBUST_PERCENTILE)
-            c_bit_comp = measure_bitplane_compression(model, bit_depths=bit_depths)
+            c_bin, c_multi, _ = measure_complexity(model, bit_depths=bit_depths, robust=USE_ROBUST_NORM, percentile=ROBUST_PERCENTILE, block_size=BLOCK_SIZE)
+            c_bit_comp = measure_bitplane_compression(model, bit_depths=bit_depths, block_size=BLOCK_SIZE)
             # Self-shuffle baseline: this same snapshot's own weights, randomly permuted (same
             # value distribution, no spatial pattern). Measured alongside the passed-in
             # random-init baseline so both are reported per epoch.
             with shuffled_weights(model):
-                _, s_multi, _ = measure_complexity(model, bit_depths=bit_depths, robust=USE_ROBUST_NORM, percentile=ROBUST_PERCENTILE)
+                _, s_multi, _ = measure_complexity(model, bit_depths=bit_depths, robust=USE_ROBUST_NORM, percentile=ROBUST_PERCENTILE, block_size=BLOCK_SIZE)
             history['epochs'].append(epoch)
             history['train_loss'].append(avg_train_loss)
             history['val_loss'].append(avg_val_loss)
@@ -145,15 +150,17 @@ def train_and_evaluate(model, budget, device, train_dataset, val_loader, baselin
     accuracy = 100. * correct / len(val_loader.dataset)
     
     c_bin, c_multi_dict, _ = measure_complexity(
-        model, bit_depths=bit_depths, robust=USE_ROBUST_NORM, percentile=ROBUST_PERCENTILE
+        model, bit_depths=bit_depths, robust=USE_ROBUST_NORM, percentile=ROBUST_PERCENTILE,
+        block_size=BLOCK_SIZE
     )
     c_comp = measure_compression(model)
-    c_bit_comp = measure_bitplane_compression(model, bit_depths=bit_depths)
+    c_bit_comp = measure_bitplane_compression(model, bit_depths=bit_depths, block_size=BLOCK_SIZE)
 
     # "True structure" baseline for the final trained model: same weights, shuffled.
     with shuffled_weights(model):
         s_bin, s_multi_dict, _ = measure_complexity(
-            model, bit_depths=bit_depths, robust=USE_ROBUST_NORM, percentile=ROBUST_PERCENTILE
+            model, bit_depths=bit_depths, robust=USE_ROBUST_NORM, percentile=ROBUST_PERCENTILE,
+            block_size=BLOCK_SIZE
         )
         s_comp = measure_compression(model)
 
@@ -192,7 +199,7 @@ def main(MLP_SCALE=1.0):
     # below is reset via model.load_state_dict(initial_model.state_dict()) -- so this is the
     # exact untrained state for every repeat/budget, not an approximation of it.
     print("Measuring random-init baseline complexity...")
-    b_bin, b_multi_dict, _ = measure_complexity(initial_model, bit_depths=BIT_DEPTHS, robust=USE_ROBUST_NORM, percentile=ROBUST_PERCENTILE)
+    b_bin, b_multi_dict, _ = measure_complexity(initial_model, bit_depths=BIT_DEPTHS, robust=USE_ROBUST_NORM, percentile=ROBUST_PERCENTILE, block_size=BLOCK_SIZE)
     b_comp = measure_compression(initial_model)
 
     agg_bin_rand, agg_bin_self, agg_acc = {b: [] for b in DATA_BUDGETS}, {b: [] for b in DATA_BUDGETS}, {b: [] for b in DATA_BUDGETS}

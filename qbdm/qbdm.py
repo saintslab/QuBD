@@ -67,35 +67,56 @@ def bdm_batch_worker(data_list):
             results.append(0.0)
     return results
 
-def get_bitplanes(weight_tensor, num_planes, robust=False, percentile=99.9, epsilon=1e-8):
-    """Vectorized GPU-based bit-plane extraction with optional robust normalization."""
+def _quantizer_range(tensor_region, robust, percentile):
+    """(min, max) dynamic-range boundaries the quantizer uses for one region -- the whole
+    tensor for global quantization, or a single block for blockwise quantization."""
+    if robust:
+        flat = tensor_region.reshape(-1).float()
+        q = (1.0 - percentile / 100.0) / 2.0
+        return torch.quantile(flat, q), torch.quantile(flat, 1.0 - q)
+    return tensor_region.min(), tensor_region.max()
+
+
+def _quantize_region(tensor_region, num_planes, robust, percentile, epsilon):
+    """Uniformly quantizes one region to num_planes bits using its own local (robust or
+    min/max) dynamic range. Used both for global quantization (region = whole tensor) and
+    for blockwise quantization (region = one block), so each block's range only affects
+    that block's quantization step."""
+    r_min, r_max = _quantizer_range(tensor_region, robust, percentile)
+    if (r_max - r_min) < epsilon:
+        return torch.zeros_like(tensor_region)
+    delta = (r_max - r_min) / (2**num_planes - 1)
+    return torch.clamp(torch.round((tensor_region - r_min) / delta), 0, 2**num_planes - 1)
+
+
+def get_bitplanes(weight_tensor, num_planes, robust=False, percentile=99.9, epsilon=1e-8, block_size=None):
+    """Vectorized GPU-based bit-plane extraction with optional robust normalization.
+
+    block_size: if set, the quantizer's (w_min, w_max) range is computed independently per
+    non-overlapping block_size x block_size block of the tensor, instead of once globally
+    over the whole tensor. This localizes the effect of quantization -- a single outlier
+    region only widens the quantization step (and so loses precision) within its own block,
+    rather than rescaling delta for the whole tensor -- which is useful for isolating how
+    much of the measured complexity/compressibility is an artifact of the *global* quantizer
+    range vs. genuine structure. Edge blocks that don't divide the tensor evenly are simply
+    smaller (no padding/cropping) and get their own local range. Default (None) is the
+    original global-range behavior, unchanged.
+    """
     if weight_tensor.dim() > 2:
         weight_tensor = weight_tensor.flatten(1)
     h, w = weight_tensor.shape
     if h < 4 or w < 4:
         return []
 
-    # Determine dynamic range boundaries for the quantizer
-    if robust:
-        flat_w = weight_tensor.view(-1).float()
-        q = (1.0 - percentile / 100.0) / 2.0
-        w_min = torch.quantile(flat_w, q)
-        w_max = torch.quantile(flat_w, 1.0 - q)
+    if block_size is not None and block_size > 0:
+        quantized = torch.zeros((h, w), dtype=weight_tensor.dtype, device=weight_tensor.device)
+        for i0 in range(0, h, block_size):
+            for j0 in range(0, w, block_size):
+                block = weight_tensor[i0:i0 + block_size, j0:j0 + block_size]
+                quantized[i0:i0 + block_size, j0:j0 + block_size] = _quantize_region(
+                    block, num_planes, robust, percentile, epsilon)
     else:
-        w_min, w_max = weight_tensor.min(), weight_tensor.max()
-
-    # Calculate the quantization step size (Delta)
-    delta = (w_max - w_min) / (2**num_planes - 1)
-
-    # Map to integer space using standard uniform rounding and saturation (clamping)
-    # Adding a small epsilon to delta to prevent division by zero
-    if (w_max - w_min) < epsilon:
-        quantized = [np.zeros((h, w), dtype=np.int8)] * num_planes
-    else:
-        quantized = torch.clamp(
-            torch.round((weight_tensor - w_min) / (delta)),
-            0, 2**num_planes - 1
-        )#.to(torch.uint8)
+        quantized = _quantize_region(weight_tensor, num_planes, robust, percentile, epsilon)
 
     planes = []
     for i in range(num_planes):
@@ -123,14 +144,14 @@ def measure_compression(model):
     }
     return savings
 
-def measure_bitplane_compression(model, bit_depths=[8]):
+def measure_bitplane_compression(model, bit_depths=[8], block_size=None):
     """Calculates additive compression savings by compressing each bit-plane independently."""
     results = {bd: {'gzip': 0.0, 'lzma': 0.0, 'raw': 0.0} for bd in bit_depths}
     with torch.no_grad():
         for name, p in model.named_parameters():
             if p.requires_grad and p.dim() >= 2:
                 for bd in bit_depths:
-                    planes = get_bitplanes(p.data, bd)
+                    planes = get_bitplanes(p.data, bd, block_size=block_size)
                     for plane in planes:
                         packed = np.packbits(plane.flatten())
                         results[bd]['raw'] += packed.nbytes
@@ -143,9 +164,9 @@ def measure_bitplane_compression(model, bit_depths=[8]):
     } for bd in bit_depths}
     return savings
 
-def get_tiled_manifold(weight_tensor, num_planes, robust=False, percentile=99.9):
+def get_tiled_manifold(weight_tensor, num_planes, robust=False, percentile=99.9, block_size=None):
     """Constructs a 2D tiled manifold to capture inter-plane coupling."""
-    planes = get_bitplanes(weight_tensor, num_planes, robust, percentile)
+    planes = get_bitplanes(weight_tensor, num_planes, robust, percentile, block_size=block_size)
     if not planes:
         return None
 
@@ -168,7 +189,7 @@ def get_tiled_manifold(weight_tensor, num_planes, robust=False, percentile=99.9)
     return tiled
 
 
-def measure_per_plane_complexity(model, bit_depth=8, max_workers=8, robust=False, percentile=99.9, tiled=False):
+def measure_per_plane_complexity(model, bit_depth=8, max_workers=8, robust=False, percentile=99.9, tiled=False, block_size=None):
     """Aggregates complexity scores for individual bitplanes."""
 
     for name, module in model.named_modules():
@@ -185,7 +206,7 @@ def measure_per_plane_complexity(model, bit_depth=8, max_workers=8, robust=False
 
             if is_trainable and w.dim() >= 2:
                 # We use w.data to ensure we are working with the tensor values
-                planes = get_bitplanes(w.data, bit_depth, robust=robust, percentile=percentile)
+                planes = get_bitplanes(w.data, bit_depth, robust=robust, percentile=percentile, block_size=block_size)
     def chunk_list(lst, n):
         for i in range(0, len(lst), n):
             yield lst[i:i + n]
@@ -225,8 +246,14 @@ def per_plane_ratio(c_multi, s_multi):
     return [100.0 * c / s if s else 0.0 for c, s in zip(c_multi, s_multi)]
 
 
-def measure_complexity(model, bit_depths=[8], max_workers=8, robust=False, percentile=99.9, tiled=False):
-    """Aggregates complexity scores for independent and optionally tiled manifolds."""
+def measure_complexity(model, bit_depths=[8], max_workers=8, robust=False, percentile=99.9, tiled=False, block_size=None):
+    """Aggregates complexity scores for independent and optionally tiled manifolds.
+
+    block_size: passed through to get_bitplanes()/get_tiled_manifold() -- if set, the
+    quantizer's dynamic range is computed per block_size x block_size block instead of
+    once over each whole weight tensor. See get_bitplanes()'s docstring for why this is
+    useful for isolating the quantizer's own contribution to the measured complexity.
+    """
     binary_tasks = []
     multi_tasks = {bd: [] for bd in bit_depths}
     tiled_tasks = {bd: [] for bd in bit_depths} if tiled else {}
@@ -257,11 +284,11 @@ def measure_complexity(model, bit_depths=[8], max_workers=8, robust=False, perce
         binary_tasks.append( (p_val > 0).cpu().numpy().astype(np.int8))
         for bd in bit_depths:
             if tiled:
-                tm = get_tiled_manifold(p_val, bd, robust=robust, percentile=percentile)
+                tm = get_tiled_manifold(p_val, bd, robust=robust, percentile=percentile, block_size=block_size)
                 if tm is not None:
                     tiled_tasks[bd].append(tm)
 
-            planes = get_bitplanes(p_val, bd, robust=robust, percentile=percentile)
+            planes = get_bitplanes(p_val, bd, robust=robust, percentile=percentile, block_size=block_size)
             multi_tasks[bd].extend(planes)
 
     def chunk_list(lst, n):

@@ -24,12 +24,17 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Executing on: {device}")
 
 # Repeat parameter
-NUM_REPEATS = 3
+NUM_REPEATS = 1
 
 # Training Hyperparameters
 USE_ROBUST_NORM = True
 ROBUST_PERCENTILE = 99.9
 BIT_WIDTH = 8
+# If set (e.g. 8), the quantizer's dynamic range is computed per BLOCK_SIZE x BLOCK_SIZE
+# block of each weight tensor instead of once globally -- localizes the effect of the
+# quantizer's own range on the measured complexity. None = original global-range behavior.
+# See qbdm.qbdm.get_bitplanes()'s docstring for details.
+BLOCK_SIZE = 1024 #None
 P = 97
 D_MODEL = 512
 LR = 1e-3
@@ -73,7 +78,8 @@ for run in range(NUM_REPEATS):
     # eval this run (each run draws its own fresh init, so unlike train.py this can't be
     # hoisted out of the run loop).
     _, b_dict, _ = measure_complexity(model, bit_depths=[BIT_WIDTH],
-                                       robust=USE_ROBUST_NORM, percentile=ROBUST_PERCENTILE)
+                                       robust=USE_ROBUST_NORM, percentile=ROBUST_PERCENTILE,
+                                       block_size=BLOCK_SIZE)
 
     x_data = torch.cartesian_prod(torch.arange(P), torch.arange(P)).to(device)
     y_data = ((x_data[:, 0] + x_data[:, 1]) % P).to(device)
@@ -104,14 +110,16 @@ for run in range(NUM_REPEATS):
                 t_acc = (t_logits.argmax(1) == y_data[train_idx]).float().mean().item()
                 v_acc = (v_logits.argmax(1) == y_data[val_idx]).float().mean().item()
                 _, c_dict, _ = measure_complexity(model, bit_depths=[BIT_WIDTH],
-                                              robust=USE_ROBUST_NORM, percentile=ROBUST_PERCENTILE)
+                                              robust=USE_ROBUST_NORM, percentile=ROBUST_PERCENTILE,
+                                              block_size=BLOCK_SIZE)
                 # Self-shuffle baseline: this same snapshot's own weights, randomly permuted
                 # (same value distribution, no spatial pattern). Reported alongside the
                 # random-init baseline (b_dict, measured once above) rather than replacing it
                 # -- see train.py/qbdm.py multi_plane_ratio() docstrings for the distinction.
                 with shuffled_weights(model):
                     _, s_dict, _ = measure_complexity(model, bit_depths=[BIT_WIDTH],
-                                                  robust=USE_ROBUST_NORM, percentile=ROBUST_PERCENTILE)
+                                                  robust=USE_ROBUST_NORM, percentile=ROBUST_PERCENTILE,
+                                                  block_size=BLOCK_SIZE)
                 qbdm_rand = multi_plane_ratio(c_dict[BIT_WIDTH], b_dict[BIT_WIDTH])
                 qbdm_self = multi_plane_ratio(c_dict[BIT_WIDTH], s_dict[BIT_WIDTH])
 
