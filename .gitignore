@@ -45,8 +45,9 @@ ecnas/utils/data/tabular_benchmarks/nasbench_full.tfrecord
 .idea/misc.xml
 ecnas/.idea/
 
-# Saved random-init checkpoints (see utils/random_init.py); large, regenerated on demand
-results/random_init/
+# Experiment outputs (results, incl. the saved random-init checkpoints) and figures
+results/
+figs/
 
 
 
