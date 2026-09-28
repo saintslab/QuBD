@@ -32,6 +32,18 @@ if __name__ == '__main__':
         "models": MODELS
     }
 
+    # Resume a previous (e.g. crashed) run with the same settings: models already in
+    # OUT_PATH are skipped. Delete OUT_PATH to start from scratch.
+    if os.path.exists(OUT_PATH):
+        with open(OUT_PATH, "r") as f:
+            previous = json.load(f)
+        if previous["bit_depths"] != BIT_DEPTHS or previous["models"] != MODELS:
+            print(f"Error: {OUT_PATH} was made with different models or bit depths; move or delete it first.")
+            exit(1)
+        results = previous
+        done = [m for m in MODELS if m in results]
+        print(f"Resuming from {OUT_PATH}: {len(done)}/{len(MODELS)} models already done.")
+
     # Check that all models are available in timm. If not, print warning and exit.
     available_models = timm.list_models()
     missing = [m for m in MODELS if m not in available_models]
@@ -42,6 +54,8 @@ if __name__ == '__main__':
         exit(1)
 
     for model_name in MODELS:
+        if model_name in results:
+            continue
         print(f"\nProcessing {model_name}...")
         try:
             model_pre = timm.create_model(model_name, pretrained=True).eval()
