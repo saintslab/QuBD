@@ -6,7 +6,9 @@ import timm
 from qbdm.qbdm import measure_complexity
 from utils.random_init import get_fixed_random_model
 
-with open("model_names_100.txt", "r") as f:
+MODEL_NAMES_FILE = "model_names_100.txt" # "model_names_5.txt"
+
+with open(MODEL_NAMES_FILE, "r") as f:
     MODELS = [line.strip() for line in f if line.strip()]
 
 BIT_DEPTHS = [8] #[1, 2, 4, 8, 16, 32]
@@ -15,8 +17,11 @@ BIT_DEPTHS = [8] #[1, 2, 4, 8, 16, 32]
 USE_ROBUST_NORM = True
 ROBUST_PERCENTILE = 99.9
 
+# Output name reflects the settings, e.g. complexities_100models_robust_p99.9.json or
+# complexities_5models_bd16_robust_p99.9.json; bit depths are only tagged when not [8].
+BD_TAG = "" if BIT_DEPTHS == [8] else "_bd" + "-".join(str(bd) for bd in BIT_DEPTHS)
 SUFFIX = f"_robust_p{ROBUST_PERCENTILE:g}" if USE_ROBUST_NORM else ""
-OUT_PATH = f"results/complexities_100models{SUFFIX}.json"
+OUT_PATH = f"results/complexities_{len(MODELS)}models{BD_TAG}{SUFFIX}.json"
 
 def count_params(model):
     return sum(p.numel() for p in model.parameters())
