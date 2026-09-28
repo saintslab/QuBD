@@ -13,15 +13,17 @@ Results in Figure 4 in the paper can be reproduced by running this script:
 python train.py
 ```
 
+The scripts below use one of two model lists: `model_names_100.txt` (100 timm models) or `model_names_5.txt` (ResNet18, ResNet50, ViT-B/16, EfficientNet-B0, MobileNetV3). Settings such as the model list, bit depths and clipping are set at the top of each script; by default the weights are clipped at the 99.9th percentile, as in `train.py`. All results are saved to `results/`, with the settings in the filename.
+
 ### Complexity across models
-Computes whole-model complexity for a list of timm models, comparing pretrained vs. random weights. Model names are read from `model_names_100.txt` (set `MODEL_NAMES_FILE` to use e.g. `model_names_5.txt`). Results are saved to `results/`, with the settings in the filename, e.g. `results/complexities_100models_robust_p99.9.json` (`USE_ROBUST_NORM`/`ROBUST_PERCENTILE`, default: clipping at 99.9 as in `train.py`) or `results/complexities_5models_bd16.json` (`BIT_DEPTHS = [16]`, no clipping). Results are saved after every model, and an interrupted run resumes where it stopped.
+Computes whole-model complexity for the models in `model_names_100.txt`, comparing pretrained vs. random weights. Results are saved after every model, so an interrupted run resumes where it stopped.
 
 ```
 python complexity_per_model.py
 ```
 
 ### Complexity per layer 
-Computes bitplane complexity per layer for 5 pretrained models (ResNet18, ResNet50, ViT-B/16, EfficientNet-B0, MobileNetV3), comparing pretrained vs. random weights. Model names are read from `model_names_5.txt`. Results are saved to e.g. `results/complexity_per_layer_5models_robust_p99.9.json` (same clipping settings as above).
+Computes bit-plane complexity per layer for the models in `model_names_5.txt`, comparing pretrained vs. random weights.
 
 ```
 python complexity_per_layer.py
@@ -29,7 +31,7 @@ python complexity_per_layer.py
 
 ###  Post-Training Quantization and QuBD Complexity
 
-Evaluates post-training quantization (PTQ) accuracy for 5 pretrained models (ResNet18, ResNet50, ViT-B/16, EfficientNet-B0, MobileNetV3) on the ImageNet-1K validation set. Compares FP32, FP16, and per-channel uniform PTQ at bit depths 1–8. Results are saved to `results/ptq.json`.
+Evaluates post-training quantization (PTQ) accuracy for the models in `model_names_5.txt` on the ImageNet-1K validation set. Compares FP32, FP16, and per-channel uniform PTQ at bit depths 1–8.
 
 ```
 python ptq.py
@@ -38,13 +40,13 @@ python ptq.py
 Utility module providing quantizer classes (`UniformQuantizer`, `UniformQuantizer_per_channel`) and helper functions (`attach_weight_quantizers`, `detach_weight_quantizers`, `toggle_quantization`) used by `ptq.py`. Not intended to be run directly.
 
 ### Plotting
-`plot_figures.py` makes the figures from the results above and saves them to `figs/`. Pick one figure, and the clipping setting with `--percentile` (a percentile, or `none` for no clipping; default 99.9). The settings are in the figure's filename, e.g. `figs/per_layer_resnet50_bd8_robust_p99.99.pdf`.
+`plot_figures.py` makes the figures from the results above and saves them to `figs/`, with the settings in the filename. Choose the clipping with `--percentile` (e.g. `99.99`, or `none`; default 99.9).
 
-| Figure | Needs results from |
+| Figure | Uses results from |
 |---|---|
-| `ranked100`: per-plane complexity ratio of all 100 models, ranked by the MSB ratio (`--panels 4` or `8`) | `complexity_per_model.py` (100 models, 8-bit) |
-| `per_layer`: per-layer complexity ratio on planes 7 and 6 (`--model`, default `resnet18`) | `complexity_per_layer.py` |
-| `complexity_accuracy`: per-plane complexity ratio next to PTQ accuracy (`--bits`, default 16) | `complexity_per_model.py` (5 models, 16-bit) and `ptq.py` |
+| `ranked100`: complexity per bit-plane for all 100 models | `complexity_per_model.py` |
+| `per_layer`: complexity per layer for one model | `complexity_per_layer.py` |
+| `complexity_accuracy`: complexity per bit-plane next to PTQ accuracy | `complexity_per_model.py` (with `model_names_5.txt`, 16-bit) and `ptq.py` |
 
 ```
 python plot_figures.py ranked100 --percentile 99.9 --panels 4
