@@ -11,6 +11,13 @@ with open("model_names_100.txt", "r") as f:
 
 BIT_DEPTHS = [8] #[1, 2, 4, 8, 16, 32]
 
+# Robust Normalization Parameters (percentile-clipped quantizer range, as in train.py)
+USE_ROBUST_NORM = True
+ROBUST_PERCENTILE = 99.9
+
+SUFFIX = f"_robust_p{ROBUST_PERCENTILE:g}" if USE_ROBUST_NORM else ""
+OUT_PATH = f"results/complexities_100models{SUFFIX}.json"
+
 def count_params(model):
     return sum(p.numel() for p in model.parameters())
 
@@ -35,8 +42,8 @@ if __name__ == '__main__':
             model_pre = timm.create_model(model_name, pretrained=True).eval()
             model_ran = get_fixed_random_model(model_name)
 
-            bin_p, qbit_p, _ = measure_complexity(model_pre, bit_depths=BIT_DEPTHS)
-            bin_r, qbit_r, _ = measure_complexity(model_ran, bit_depths=BIT_DEPTHS)
+            bin_p, qbit_p, _ = measure_complexity(model_pre, bit_depths=BIT_DEPTHS, robust=USE_ROBUST_NORM, percentile=ROBUST_PERCENTILE)
+            bin_r, qbit_r, _ = measure_complexity(model_ran, bit_depths=BIT_DEPTHS, robust=USE_ROBUST_NORM, percentile=ROBUST_PERCENTILE)
 
             results[model_name] = {
                 "num_params": count_params(model_pre),
@@ -53,7 +60,7 @@ if __name__ == '__main__':
         except Exception as e:
             print(f"  Failed: {e}")
 
-    with open("results/complexities_100models.json", "w") as f:
+    with open(OUT_PATH, "w") as f:
         json.dump(results, f, indent=2)
 
-    print("\nSaved to results/complexities_100models.json")
+    print(f"\nSaved to {OUT_PATH}")
