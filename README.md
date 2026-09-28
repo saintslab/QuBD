@@ -40,19 +40,13 @@ python ptq.py
 Utility module providing quantizer classes (`UniformQuantizer`, `UniformQuantizer_per_channel`) and helper functions (`attach_weight_quantizers`, `detach_weight_quantizers`, `toggle_quantization`) used by `ptq.py`. Not intended to be run directly.
 
 ### Plotting
-`plot_figures.py` makes the figures from the results above and saves them to `figs/`, with the settings in the filename. Choose the clipping with `--percentile` (e.g. `99.99`, or `none`; default 99.9).
-
-| Figure | Uses results from |
-|---|---|
-| `ranked100`: complexity per bit-plane for all 100 models | `complexity_per_model.py` |
-| `per_layer`: complexity per layer for one model | `complexity_per_layer.py` |
-| `complexity_accuracy`: complexity per bit-plane next to PTQ accuracy | `complexity_per_model.py` (with `model_names_5.txt`, 16-bit) and `ptq.py` |
+`plot_figures.py` makes the figures from the results above and saves them to `figs/`, with the settings in the filename (e.g. `complexity_per_layer_resnet50_8bit_clip99.99.pdf`). Choose the clipping with `--percentile` (e.g. `99.99`, or `none`; default 99.9).
 
 ```
-python plot_figures.py ranked100 --percentile 99.9 --panels 4
-python plot_figures.py per_layer --model resnet50 --percentile none
-python plot_figures.py complexity_accuracy --percentile 99.99
-python plot_figures.py all    # every figure for every clipping setting (none, 99.99, 99.9); skips missing results
+python plot_figures.py per_plane --planes 4         # complexity per bit-plane, 100 models
+python plot_figures.py per_layer --model resnet50   # complexity per layer, one model
+python plot_figures.py vs_accuracy --bits 16        # complexity per bit-plane next to PTQ accuracy, 5 models
+python plot_figures.py all                          # all figures, all clipping settings
 ```
 
 ### Usage guidelines ###

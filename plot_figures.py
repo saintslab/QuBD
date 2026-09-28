@@ -1,8 +1,8 @@
 """Figures for the QuBD complexity analysis. Run from the repository root, e.g.
 
-    python plot_figures.py ranked100 --percentile 99.9 --panels 4
+    python plot_figures.py per_plane --percentile 99.9 --planes 4
     python plot_figures.py per_layer --model resnet18 --percentile none
-    python plot_figures.py complexity_accuracy --percentile 99.99
+    python plot_figures.py vs_accuracy --percentile 99.99
     python plot_figures.py all
 
 --percentile selects the clipping setting of the results to plot ("none" = no clipping)
@@ -31,7 +31,7 @@ def suffix(p):
 
 
 def tag(p):
-    return "nonrobust" if p is None else f"robust_p{p:g}"
+    return "noclip" if p is None else f"clip{p:g}"
 
 
 def load(path):
@@ -52,7 +52,7 @@ def save(fig, name):
     print(f"Saved figs/{name}.pdf")
 
 
-def ranked100(p, panels=4):
+def per_plane(p, planes=4):
     """Per-plane ratio of all 100 models, ranked by the non-clipped MSB ratio, marker size ~ #params."""
     data = load(f"results/complexities_100models{suffix(p)}.json")
     models = [m for m in data["models"] if m in data]
@@ -62,11 +62,11 @@ def ranked100(p, panels=4):
     max_params = max(data[m]["num_params"] for m in models)
     size = lambda n_params: n_params / max_params * 100 + 20
 
-    planes = [7, 5, 3, 1] if panels == 4 else list(range(7, -1, -1))
-    figsize = four_panel_row_wide_size() if panels == 4 else two_row_four_panel_wide_size()
-    fig, axes = plt.subplots(1 if panels == 4 else 2, 4, figsize=figsize, sharey=True)
+    shown = [7, 5, 3, 1] if planes == 4 else list(range(7, -1, -1))
+    figsize = four_panel_row_wide_size() if planes == 4 else two_row_four_panel_wide_size()
+    fig, axes = plt.subplots(1 if planes == 4 else 2, 4, figsize=figsize, sharey=True)
     axes = axes.flatten()
-    for ax, plane in zip(axes, planes):
+    for ax, plane in zip(axes, shown):
         r = [ratios(data, m, 8)[plane] for m in models]
         ax.axhline(100, color="gray", linestyle="--", linewidth=2, alpha=0.6, zorder=2)
         sc = ax.scatter(range(len(models)), r, s=[size(data[m]["num_params"]) for m in models], c=r,
@@ -91,7 +91,7 @@ def ranked100(p, panels=4):
     y0, y1 = min(b.y0 for b in boxes), max(b.y1 for b in boxes)
     cax = fig.add_axes([max(b.x1 for b in boxes) + 0.012, y0, 0.01, y1 - y0])
     fig.colorbar(sc, cax=cax, label=DELTA_C)
-    save(fig, f"ranked100_{panels}panel_bd8_{tag(p)}")
+    save(fig, f"complexity_per_plane_100models_{planes}planes_8bit_{tag(p)}")
 
 
 def per_layer(p, model):
@@ -114,10 +114,10 @@ def per_layer(p, model):
         ax.legend(title="Bit-plane", loc="upper left", bbox_to_anchor=(1.01, 1.0))
     apply_panel_style(ax)
     fig.tight_layout()
-    save(fig, f"per_layer_{model}_bd8_{tag(p)}")
+    save(fig, f"complexity_per_layer_{model}_8bit_{tag(p)}")
 
 
-def complexity_accuracy(p, bits=16, n_planes=16, ptq_path="results/ptq.json"):
+def vs_accuracy(p, bits=16, n_planes=16, ptq_path="results/ptq.json"):
     """Left: per-plane ratio of the 5 models (top n_planes planes). Right: PTQ top-1 accuracy vs. FP32."""
     data = load(f"results/complexities_5models_bd{bits}{suffix(p)}.json")
     ptq = load(ptq_path)
@@ -147,27 +147,27 @@ def complexity_accuracy(p, bits=16, n_planes=16, ptq_path="results/ptq.json"):
     for ax in (ax1, ax2):
         apply_panel_style(ax)
     fig.tight_layout()
-    save(fig, f"complexity_accuracy_5models_bd{bits}_{tag(p)}")
+    save(fig, f"complexity_vs_accuracy_5models_{bits}bit_{tag(p)}")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("figure", choices=["ranked100", "per_layer", "complexity_accuracy", "all"])
+    parser.add_argument("figure", choices=["per_plane", "per_layer", "vs_accuracy", "all"])
     parser.add_argument("--percentile", default="99.9", type=lambda s: None if s.lower() == "none" else float(s),
                         help='clipping percentile of the results to plot, or "none" (default: 99.9)')
-    parser.add_argument("--panels", type=int, choices=[4, 8], default=4, help="ranked100: 4 or 8 planes")
+    parser.add_argument("--planes", type=int, choices=[4, 8], default=4, help="per_plane: show 4 or all 8 planes")
     parser.add_argument("--model", default="resnet18", help="per_layer: model name")
-    parser.add_argument("--bits", type=int, default=16, help="complexity_accuracy: bit depth of the results")
+    parser.add_argument("--bits", type=int, default=16, help="vs_accuracy: bit depth of the results")
     args = parser.parse_args()
 
     if args.figure == "all":  # every figure for every clipping setting
         jobs = [(p, fn, kwargs) for p in (None, 99.99, 99.9) for fn, kwargs in
-                [(ranked100, dict(panels=4)), (ranked100, dict(panels=8)), (per_layer, dict(model="resnet18")),
-                 (per_layer, dict(model="resnet50")), (complexity_accuracy, {})]]
+                [(per_plane, dict(planes=4)), (per_plane, dict(planes=8)), (per_layer, dict(model="resnet18")),
+                 (per_layer, dict(model="resnet50")), (vs_accuracy, {})]]
     else:
-        fn = {"ranked100": ranked100, "per_layer": per_layer, "complexity_accuracy": complexity_accuracy}[args.figure]
-        kwargs = {"ranked100": dict(panels=args.panels), "per_layer": dict(model=args.model),
-                  "complexity_accuracy": dict(bits=args.bits)}[args.figure]
+        fn = {"per_plane": per_plane, "per_layer": per_layer, "vs_accuracy": vs_accuracy}[args.figure]
+        kwargs = {"per_plane": dict(planes=args.planes), "per_layer": dict(model=args.model),
+                  "vs_accuracy": dict(bits=args.bits)}[args.figure]
         jobs = [(args.percentile, fn, kwargs)]
 
     use_pedram_style()
