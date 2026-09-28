@@ -5,13 +5,15 @@ import torch
 import timm
 import torch.nn as nn
 import json
-from qbdm.qbdm import measure_complexity
+from concurrent.futures import ProcessPoolExecutor
+from qbdm.qbdm import get_bitplanes, bdm_batch_worker
 from utils.random_init import get_fixed_random_model
 
 with open("model_names_5.txt", "r") as f:
     MODELS = [line.strip() for line in f if line.strip()]
 
 BIT_DEPTH = 8
+MAX_WORKERS = 8
 
 # Robust Normalization Parameters (percentile-clipped quantizer range, as in train.py)
 USE_ROBUST_NORM = True
@@ -19,6 +21,10 @@ ROBUST_PERCENTILE = 99.9
 
 SUFFIX = f"_robust_p{ROBUST_PERCENTILE:g}" if USE_ROBUST_NORM else ""
 OUT_PATH = f"results/complexity_per_layer_5models{SUFFIX}.json"
+
+def chunk_list(lst, n):
+    for i in range(0, len(lst), n):
+        yield lst[i:i + n]
 
 if __name__ == '__main__':
     all_results = {}
@@ -28,28 +34,33 @@ if __name__ == '__main__':
         model_pre = timm.create_model(model_name, pretrained=True).eval()
         model_ran = get_fixed_random_model(model_name)
         random_modules = dict(model_ran.named_modules())
-        results = {}
 
+        # Collect the bit-planes of every layer (pretrained and random) first and score them all
+        # in one shared worker pool, instead of starting a new pool for every layer.
+        tasks, keys = [], []
         for name, module in model_pre.named_modules():
             if not (hasattr(module, "weight") and isinstance(module.weight, nn.Parameter)):
                 continue
             if module.weight.dim() < 2:
                 continue
 
-            w_pre = module.weight.data
-            w_ran = random_modules[name].weight.data
+            for kind, w in (("pretrained", module.weight.data), ("random", random_modules[name].weight.data)):
+                planes = get_bitplanes(w, BIT_DEPTH, robust=USE_ROBUST_NORM, percentile=ROBUST_PERCENTILE)
+                tasks.extend(planes)
+                keys.extend((name, kind, i) for i in range(len(planes)))
 
-            _, qbit_p, _ = measure_complexity(w_pre, bit_depths=[BIT_DEPTH], robust=USE_ROBUST_NORM, percentile=ROBUST_PERCENTILE)
-            _, qbit_r, _ = measure_complexity(w_ran, bit_depths=[BIT_DEPTH], robust=USE_ROBUST_NORM, percentile=ROBUST_PERCENTILE)
+        with ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            chunks = list(chunk_list(tasks, max(1, len(tasks) // (MAX_WORKERS * 2))))
+            scores = [score for chunk in executor.map(bdm_batch_worker, chunks) for score in chunk]
 
-            plane_ratios = [
-                qbit_p[BIT_DEPTH][i] / qbit_r[BIT_DEPTH][i] * 100
-                for i in range(BIT_DEPTH)
-            ]
+        qbit = {}
+        for (name, kind, i), score in zip(keys, scores):
+            qbit.setdefault(name, {"pretrained": [0.0] * BIT_DEPTH, "random": [0.0] * BIT_DEPTH})[kind][i] = score
 
-            results[name] = plane_ratios
-
-        all_results[model_name] = results
+        all_results[model_name] = {
+            name: [q["pretrained"][i] / q["random"][i] * 100 for i in range(BIT_DEPTH)]
+            for name, q in qbit.items()
+        }
 
     with open(OUT_PATH, 'w') as f:
         json.dump(all_results, f, indent=2)
