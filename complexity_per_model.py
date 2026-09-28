@@ -65,7 +65,8 @@ if __name__ == '__main__':
         except Exception as e:
             print(f"  Failed: {e}")
 
-    with open(OUT_PATH, "w") as f:
-        json.dump(results, f, indent=2)
+        # Save after every model so an interrupted run keeps what it has computed so far
+        with open(OUT_PATH, "w") as f:
+            json.dump(results, f, indent=2)
 
     print(f"\nSaved to {OUT_PATH}")
