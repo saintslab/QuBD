@@ -8,13 +8,9 @@ import json
 from qbdm.qbdm import measure_complexity
 from utils.random_init import get_fixed_random_model
 
-MODELS = [
-    "resnet18",
-    "resnet50",
-    "vit_base_patch16_224",
-    "efficientnet_b0",
-    "mobilenetv3_large_100",
-]
+with open("model_names_5.txt", "r") as f:
+    MODELS = [line.strip() for line in f if line.strip()]
+
 BIT_DEPTH = 8
 
 # Robust Normalization Parameters (percentile-clipped quantizer range, as in train.py)

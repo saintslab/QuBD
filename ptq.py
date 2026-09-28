@@ -12,13 +12,8 @@ BIT = [1, 2, 3, 4, 5, 6, 7, 8]
 EXCLUDE = []
 BATCH_SIZE = 256
 
-MODELS = [
-    "resnet18",
-    "resnet50",
-    "vit_base_patch16_224",
-    "efficientnet_b0",
-    "mobilenetv3_large_100",
-]
+with open("model_names_5.txt", "r") as f:
+    MODELS = [line.strip() for line in f if line.strip()]
 
 HF_TOKEN = ""
 
