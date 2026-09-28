@@ -4,6 +4,7 @@ os.environ["PYTHONWARNINGS"] = "ignore"
 import json
 import timm
 from qbdm.qbdm import measure_complexity
+from utils.random_init import get_fixed_random_model
 
 with open("model_names_100.txt", "r") as f:
     MODELS = [line.strip() for line in f if line.strip()]
@@ -32,7 +33,7 @@ if __name__ == '__main__':
         print(f"\nProcessing {model_name}...")
         try:
             model_pre = timm.create_model(model_name, pretrained=True).eval()
-            model_ran = timm.create_model(model_name, pretrained=False).eval()
+            model_ran = get_fixed_random_model(model_name)
 
             bin_p, qbit_p, _ = measure_complexity(model_pre, bit_depths=BIT_DEPTHS)
             bin_r, qbit_r, _ = measure_complexity(model_ran, bit_depths=BIT_DEPTHS)

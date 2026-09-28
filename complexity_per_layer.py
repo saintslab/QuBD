@@ -6,6 +6,7 @@ import timm
 import torch.nn as nn
 import json
 from qbdm.qbdm import measure_complexity
+from utils.random_init import get_fixed_random_model
 
 MODELS = [
     "resnet18",
@@ -20,10 +21,9 @@ if __name__ == '__main__':
     all_results = {}
 
     for model_name in MODELS:
-        torch.manual_seed(42)  # Reset seed for reproducibility
         print(f"\nProcessing {model_name}...")
         model_pre = timm.create_model(model_name, pretrained=True).eval()
-        model_ran = timm.create_model(model_name, pretrained=False).eval()
+        model_ran = get_fixed_random_model(model_name)
         random_modules = dict(model_ran.named_modules())
         results = {}
 
