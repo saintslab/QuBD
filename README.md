@@ -1,6 +1,6 @@
 # QuBD Complexity 
 
-Official repository for [Bakhtiarifard et al. (2026)](https://arxiv.org/abs/2605.15551) "Characterizing Learning in Deep Neural Networks using Tractable Algorithmic Complexity Analysis". 
+Official repository for [Bakhtiarifard et al. (2026)](https://arxiv.org/abs/2605.15551) "Characterizing Learning in Deep Neural Networks using Tractable Algorithmic Complexity Analysis", published at NeurIPS 2026. 
 
 ![qubd](utils/qubd.png)
 
@@ -61,7 +61,7 @@ python plot_figures.py all    # every figure for every clipping setting (none, 9
 @inproceedings{bakh2026qubd,
         title={{Characterizing Learning in Deep Neural Networks using Tractable Algorithmic Complexity Analysis}},
         author={Pedram Bakhtiarifard, Sophia N. Wilson, Mahmoud Afifi, Jonathan Wenshøj and Raghavendra Selvan},
-        booktitle={Arxiv},
+        booktitle={Advances in Neural Information Processing Systems (NeurIPS)},
         note={arXiv preprint arxiv:2605.15551},
         year={2026}}
 ```
