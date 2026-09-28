@@ -117,7 +117,8 @@ if __name__ == "__main__":
             traceback.print_exc()
 
     # ── Save results ──────────────────────────────────────────────────────────
-    out_path = os.path.join(os.path.dirname(__file__), f"ptq.json")
+    os.makedirs("results", exist_ok=True)
+    out_path = os.path.join("results", "ptq.json")
     with open(out_path, "w") as f:
         json.dump(results, f, indent=2)
     print(f"\nResults saved to {out_path}")
