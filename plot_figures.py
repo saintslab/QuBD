@@ -137,8 +137,9 @@ def vs_accuracy(p, bits=16, n_planes=8, ptq_path="results/ptq.json"):
     ax1.axhline(100, color="gray", linestyle="--", linewidth=1, alpha=0.6)
     ax1.set(xlabel="Plane Index", ylabel=DELTA_C)
     ax1.set_xticks(range(n_planes))
-    ax1.set_xticklabels([f"{i} \n(MSB)" if i == bits - 1 else f"{i} \n(LSB)" if i == 0 else f"${i}$"
-                         for i in range(bits - 1, bits - 1 - n_planes, -1)])
+    # The shown planes are numbered n_planes - 1 (MSB) down to 0 (LSB)
+    ax1.set_xticklabels([f"{i} \n(MSB)" if i == n_planes - 1 else f"{i} \n(LSB)" if i == 0 else f"${i}$"
+                         for i in range(n_planes - 1, -1, -1)])
     ax1.legend(loc="lower right", markerfirst=False)
 
     bit_widths = ptq["bit_depths"]
