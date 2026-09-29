@@ -20,7 +20,7 @@ import matplotlib.lines as mlines
 from utils.pedram_style import (use_pedram_style, apply_panel_style, PALETTE,
                                 two_panel_size, four_panel_row_wide_size, two_row_four_panel_wide_size)
 
-NAMES = {"resnet18": "ResNet-18", "resnet50": "ResNet-50", "vit_base_patch16_224": "ViT-B/16",
+NAMES = {"resnet18": "ResNet-18", "resnet50": "ResNet-50", "vit_base_patch16_224.augreg_in1k": "ViT-B/16",
          "efficientnet_b0": "EfficientNet-B0", "mobilenetv3_large_100": "MobileNetV3"}
 DELTA_C = r"$\Delta C_{\mathrm{QuBD}}$ (\%)"
 
