@@ -124,8 +124,9 @@ def per_layer(p, model):
     save(fig, f"complexity_per_layer_{model}_8bit_{tag(p)}")
 
 
-def vs_accuracy(p, bits=16, n_planes=16, ptq_path="results/ptq.json"):
-    """Left: per-plane ratio of the 5 models (top n_planes planes). Right: PTQ top-1 accuracy vs. FP32."""
+def vs_accuracy(p, bits=16, n_planes=8, ptq_path="results/ptq.json"):
+    """Left: per-plane ratio of the 5 models (the n_planes most significant planes). Right: PTQ top-1
+    accuracy vs. FP32."""
     data = load(f"results/complexities_5models_bd{bits}{suffix(p)}.json")
     ptq = load(ptq_path)
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=two_panel_size())
@@ -136,8 +137,8 @@ def vs_accuracy(p, bits=16, n_planes=16, ptq_path="results/ptq.json"):
     ax1.axhline(100, color="gray", linestyle="--", linewidth=1, alpha=0.6)
     ax1.set(xlabel="Plane Index", ylabel=DELTA_C)
     ax1.set_xticks(range(n_planes))
-    ax1.set_xticklabels([f"{i} \n(MSB)" if i == n_planes - 1 else f"{i} \n(LSB)" if i == 0 else f"${i}$"
-                         for i in range(n_planes - 1, -1, -1)])
+    ax1.set_xticklabels([f"{i} \n(MSB)" if i == bits - 1 else f"{i} \n(LSB)" if i == 0 else f"${i}$"
+                         for i in range(bits - 1, bits - 1 - n_planes, -1)])
     ax1.legend(loc="lower right", markerfirst=False)
 
     bit_widths = ptq["bit_depths"]
