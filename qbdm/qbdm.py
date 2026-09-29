@@ -6,9 +6,17 @@ import gzip
 import lzma
 import pdb
 import torch.nn as nn
+from quantizer.quantizer import torch_quantile
 
 # Global BDM instance for workers
 bdm_instance = BDM(ndim=2, nsymbols=2)
+
+def quantile(x, q):
+    """torch.quantile, except for tensors above its 2**24-element limit, which use the
+    kthvalue-based torch_quantile (torch.quantile raises an error for those)."""
+    # SW: torch.quantile breaks for tensors above 2**24 values and computes the percentile
+    # position in float32, which makes it slightly inaccurate. Should we use torch_quantile everywhere?
+    return torch.quantile(x, q) if x.numel() <= 2**24 else torch_quantile(x, q)
 
 def bdm_batch_worker(data_list):
     """Processes a batch of binary planes in a single worker call to reduce overhead."""
@@ -32,8 +40,8 @@ def get_bitplanes(weight_tensor, num_planes, robust=False, percentile=99.9, epsi
     if robust:
         flat_w = weight_tensor.view(-1).float()
         q = (1.0 - percentile / 100.0) / 2.0
-        w_min = torch.quantile(flat_w, q)
-        w_max = torch.quantile(flat_w, 1.0 - q)
+        w_min = quantile(flat_w, q)
+        w_max = quantile(flat_w, 1.0 - q)
     else:
         w_min, w_max = weight_tensor.min(), weight_tensor.max()
 
