@@ -81,6 +81,11 @@ class UniformQuantizer_per_channel(nn.Module):
         self.bit_width = new_bit_width
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.bit_width == 1:
+            # Binary weights: sign(x) scaled by the per-channel mean |x|, which minimizes the squared
+            # error. The symmetric formula below has 2**0 - 1 = 0 levels at 1 bit (division by zero).
+            alpha = x.abs().flatten(1).mean(dim=1).view(-1, *[1] * (x.dim() - 1)) if x.dim() > 1 else x.abs().mean()
+            return torch.where(x >= 0, alpha, -alpha)
         if x.dim() == 4:
             max_val = x.abs().view(x.shape[0], -1).max(dim=1).values
             s = (max_val / (2 ** (self.bit_width - 1) - 1)).view(-1, 1, 1, 1)
@@ -108,10 +113,11 @@ class FakeQuantParametrization(nn.Module):
 
 
 def attach_weight_quantizers(model, exclude_layers, quantizer, enabled=True, verbose=False) -> None:
-    """Attaches fake-quant parametrizations to all eligible weight layers."""
+    """Attaches fake-quant parametrizations to all eligible weight layers: weights with at least two
+    dimensions (linear and conv layers); normalization layers (1D weights) stay in full precision."""
     for name, module in model.named_modules():
         if not any(target in name for target in exclude_layers):
-            if hasattr(module, "weight") and isinstance(module.weight, nn.Parameter):
+            if hasattr(module, "weight") and isinstance(module.weight, nn.Parameter) and module.weight.dim() >= 2:
                 parametrize.register_parametrization(
                     module, "weight", FakeQuantParametrization(quantizer=quantizer, enabled=enabled)
                 )
