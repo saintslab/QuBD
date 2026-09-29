@@ -23,8 +23,9 @@ OUT_PATH = os.path.join("results", "ptq.json")
 def get_dataset():
     """ImageNet-1k validation set (50,000 images). Only the validation files are downloaded
     (~6.7 GB, once); they are cached and reused for every evaluation."""
+    # no_checks: the dataset card lists train/test splits too, which are deliberately not downloaded
     return load_dataset("ILSVRC/imagenet-1k", data_files={"validation": "data/validation-*.parquet"},
-                        split="validation", token=HF_TOKEN)
+                        split="validation", token=HF_TOKEN, verification_mode="no_checks")
 
 def evaluate(model, dataset, device, dtype=torch.float32, desc="Evaluating", transform=None):
     model.eval()
