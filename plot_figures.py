@@ -81,10 +81,12 @@ def per_plane(p, planes=4):
 
     size_handles = [plt.scatter([], [], s=size(n * 1e6), color="grey", edgecolors="black", linewidths=0.5,
                                 label=f"{n}M") for n in (1, 50, 100)]
-    size_legend = axes[0].legend(handles=size_handles, title="Model Size", loc="upper right", labelspacing=0.7)
-    axes[0].legend(handles=[mlines.Line2D([], [], color="gray", linestyle="--", linewidth=2, alpha=0.6,
-                                          label=r"100\% baseline")], loc="upper left")
-    axes[0].add_artist(size_legend)
+    # Legends go in the plane-1 panel, where (almost) all models sit near 100%
+    legend_ax = axes[shown.index(1)]
+    size_legend = legend_ax.legend(handles=size_handles, title="Model Size", loc="lower left", labelspacing=0.7)
+    legend_ax.legend(handles=[mlines.Line2D([], [], color="gray", linestyle="--", linewidth=2, alpha=0.6,
+                                            label=r"100\% baseline")], loc="center right")
+    legend_ax.add_artist(size_legend)
 
     fig.tight_layout()
     boxes = [ax.get_position() for ax in axes]
