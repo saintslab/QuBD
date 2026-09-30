@@ -80,20 +80,14 @@ def per_plane(p, planes=4):
 
     fig.tight_layout()
 
-    # Legends go in the last panel (a low plane, where almost all models sit near 100%), stacked in
-    # the lower-left corner: the baseline legend at the bottom, the size legend right above it
-    legend_ax = axes[len(shown) - 1]
-    baseline = legend_ax.legend(handles=[mlines.Line2D([], [], color="gray", linestyle="--", linewidth=2, alpha=0.6,
-                                                       label=r"100\% baseline")], loc="lower left")
-    fig.canvas.draw()
-    top = baseline.get_window_extent().transformed(legend_ax.transAxes.inverted()).y1
-    size_handles = [plt.scatter([], [], s=size(n * 1e6), color="grey", edgecolors="black", linewidths=0.5,
-                                label=f"{n}M") for n in (1, 50, 100)]
-    legend_ax.add_artist(legend_ax.legend(handles=size_handles, title="Model Size", loc="lower left",
-                                          bbox_to_anchor=(0, top), labelspacing=0.7))
-    legend_ax.add_artist(baseline)
-
     boxes = [ax.get_position() for ax in axes]
+    # One legend row below the panels (model positions differ per setting, so no panel corner is always free)
+    handles = [plt.scatter([], [], s=size(n * 1e6), color="grey", edgecolors="black", linewidths=0.5,
+                           label=f"{n}M params") for n in (1, 50, 100)]
+    handles.append(mlines.Line2D([], [], color="gray", linestyle="--", linewidth=2, alpha=0.6, label=r"100\% baseline"))
+    fig.legend(handles=handles, loc="upper center", ncol=len(handles), columnspacing=2.0,
+               bbox_to_anchor=((min(b.x0 for b in boxes) + max(b.x1 for b in boxes)) / 2, 0.0))
+
     y0, y1 = min(b.y0 for b in boxes), max(b.y1 for b in boxes)
     cax = fig.add_axes([max(b.x1 for b in boxes) + 0.012, y0, 0.01, y1 - y0])
     fig.colorbar(sc, cax=cax, label=DELTA_C)
