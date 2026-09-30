@@ -53,12 +53,11 @@ def save(fig, name):
 
 
 def per_plane(p, planes=4):
-    """Per-plane ratio of all 100 models, ranked by the non-clipped MSB ratio, marker size ~ #params."""
+    """Per-plane ratio of all 100 models, ranked by their MSB ratio (for this clipping setting),
+    marker size ~ #params."""
     data = load(f"results/complexities_100models{suffix(p)}.json")
     models = [m for m in data["models"] if m in data]
-    # Rank by the non-clipped MSB ratio so every clipping setting shares the same x-axis order
-    rank_data = load("results/complexities_100models.json") if os.path.exists("results/complexities_100models.json") else data
-    models.sort(key=lambda m: -ratios(rank_data, m, 8)[7] if m in rank_data else 0)
+    models.sort(key=lambda m: -ratios(data, m, 8)[7])
     max_params = max(data[m]["num_params"] for m in models)
     size = lambda n_params: n_params / max_params * 100 + 20
 
