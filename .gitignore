@@ -49,5 +49,12 @@ ecnas/.idea/
 results/
 figs/
 
+# Personal notes and poster material (never pushed)
+notes/
+poster/
+
+# Shuffled control script (kept local only)
+complexity_shuffled.py
+
 
 
